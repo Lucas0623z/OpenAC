@@ -31,7 +31,7 @@ namespace RogControl {
    var board=Paragraph(info.Board,18,text);board.FontWeight=FontWeights.SemiBold;board.TextAlignment=TextAlignment.Center;board.Margin=new Thickness(0,0,0,13);stack.Children.Add(board);
    var specs=new Grid();specs.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});specs.ColumnDefinitions.Add(new ColumnDefinition());
    for(int i=0;i<3;i++)specs.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
-   OriginalSpec(specs,0,"CPU",info.Cpu);OriginalSpec(specs,1,"DRAM",info.Memory+" | "+info.MemorySpeed+" MHz");OriginalSpec(specs,2,"BIOS",info.Bios);stack.Children.Add(specs);
+   OriginalSpec(specs,0,"CPU",info.Cpu);OriginalSpec(specs,1,"DRAM",info.Memory+" | "+info.MemorySpeed+" MT/s");OriginalSpec(specs,2,"BIOS",info.Bios);stack.Children.Add(specs);
    return OriginalPanel(stack,new Thickness(22,17,22,17),new Thickness(0,0,0,13));
   }
 
@@ -64,52 +64,7 @@ namespace RogControl {
   }
 
   Border OriginalMonitoring() {
-   var stack=new StackPanel();var heading=Label("系统监控",18,text,FontWeights.SemiBold);heading.Margin=new Thickness(0,0,0,14);stack.Children.Add(heading);
-   var top=new Grid();top.ColumnDefinitions.Add(new ColumnDefinition());top.ColumnDefinitions.Add(new ColumnDefinition());
-   var frequency=OriginalMetric("频率",new[]{"CPU","GPU","DRAM"},new[]{"— MHz",MonitorValue(monitor.GpuClock," MHz"),"— MHz"},OriginalMonitorState(monitor.GpuClock.HasValue));frequency.Margin=new Thickness(0,0,7,0);Grid.SetColumn(frequency,0);top.Children.Add(frequency);
-   var temperatures=OriginalMetric("温度",new[]{"CPU","GPU","主板"},new[]{"— °C",MonitorValue(monitor.GpuTemperature," °C"),"— °C"},OriginalMonitorState(monitor.GpuTemperature.HasValue));temperatures.Margin=new Thickness(7,0,0,0);Grid.SetColumn(temperatures,1);top.Children.Add(temperatures);stack.Children.Add(top);
-   var bottom=new Grid{Margin=new Thickness(0,14,0,0)};for(int i=0;i<3;i++)bottom.ColumnDefinitions.Add(new ColumnDefinition());
-   var usage=OriginalMetric("使用率",new[]{"CPU","GPU","DRAM"},new[]{MonitorValue(monitor.CpuUsage," %"),MonitorValue(monitor.GpuUsage," %"),monitor.MemoryUsage.HasValue?monitor.MemoryUsage.Value+" %":"— %"},OriginalMonitorState(monitor.CpuUsage.HasValue||monitor.GpuUsage.HasValue||monitor.MemoryUsage.HasValue));usage.Margin=new Thickness(0,0,6,0);bottom.Children.Add(usage);
-   List<string> fanLabels,fanValues;string fanState;OriginalFanReadback(out fanLabels,out fanValues,out fanState);
-   var fans=OriginalMetric("风扇",fanLabels.ToArray(),fanValues.ToArray(),fanState);fans.Margin=new Thickness(6,0,6,0);Grid.SetColumn(fans,1);bottom.Children.Add(fans);
-   var voltage=OriginalMetric("电压",new[]{"CPU","GPU","DRAM"},new[]{"— V","— V","— V"},"待接入");voltage.Margin=new Thickness(6,0,0,0);Grid.SetColumn(voltage,2);bottom.Children.Add(voltage);stack.Children.Add(bottom);
-   return new Border{Child=stack,Background=Brush("#00000000"),Margin=new Thickness(0,0,0,16)};
-  }
-
-  Border OriginalMetric(string heading,string[] labels,string[] values,string state) {
-   var stack=new StackPanel();var title=Label(heading,15,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,15);stack.Children.Add(title);
-   var rows=new Grid();rows.ColumnDefinitions.Add(new ColumnDefinition());rows.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
-   for(int i=0;i<labels.Length;i++) {
-    rows.RowDefinitions.Add(new RowDefinition{Height=new GridLength(28)});
-    var name=Label(labels[i],11,muted);name.Margin=new Thickness(0);name.VerticalAlignment=VerticalAlignment.Center;Grid.SetRow(name,i);rows.Children.Add(name);
-    var value=Label(values[i],13,values[i].StartsWith("—",StringComparison.Ordinal)?muted:accent,FontWeights.SemiBold);value.Margin=new Thickness(6,0,0,0);value.VerticalAlignment=VerticalAlignment.Center;value.TextAlignment=TextAlignment.Right;Grid.SetRow(value,i);Grid.SetColumn(value,1);rows.Children.Add(value);TrackMonitorReading(heading,labels[i],value);
-   }
-   stack.Children.Add(rows);var foot=Label(state,10,muted);foot.Margin=new Thickness(0,12,0,0);stack.Children.Add(foot);if(heading=="频率"||heading=="温度"||heading=="使用率")liveMonitorLabels["state:"+heading]=foot;
-   return new Border{Background=Brush("#00000000"),BorderBrush=accent,BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(8,13,8,13),MinHeight=182,Child=stack};
-  }
-
-  string OriginalMonitorState(bool hasReading) {return hasReading?OriginalReadingClock(new DateTimeOffset(monitor.Captured))+" 更新":"待接入";}
-
-  static string OriginalReadingClock(DateTimeOffset timestamp) {
-   try{return TimeZoneInfo.ConvertTime(timestamp,TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time")).ToString("HH:mm:ss",CultureInfo.InvariantCulture);}catch{return timestamp.ToString("HH:mm:ss",CultureInfo.InvariantCulture);}
-  }
-
-  void OriginalFanReadback(out List<string> labels,out List<string> values,out string state) {
-   labels=new List<string>();values=new List<string>();state="待接入";
-   foreach(var snapshot in sdkSnapshots.Where(pair=>pair.Key.StartsWith("fan:",StringComparison.Ordinal))) {
-    object ports;
-    if(!snapshot.Value.TryGetValue("ports",out ports)||!(ports is IEnumerable))continue;
-    foreach(object item in (IEnumerable)ports) {
-     var port=item as IDictionary<string,object>;if(port==null)continue;object confirmed,rpm,id;
-     if(!port.TryGetValue("confirmed",out confirmed)||!(confirmed is bool)||!(bool)confirmed||!port.TryGetValue("rpm",out rpm)||rpm==null)continue;
-     double number;if(!Double.TryParse(Convert.ToString(rpm,CultureInfo.InvariantCulture),NumberStyles.Float,CultureInfo.InvariantCulture,out number)||Double.IsNaN(number)||Double.IsInfinity(number)||number<0||number>50000)continue;
-     port.TryGetValue("portId",out id);labels.Add("端口 "+Convert.ToString(id,CultureInfo.InvariantCulture));values.Add(number.ToString("0",CultureInfo.InvariantCulture)+" RPM");
-     object captured;DateTimeOffset timestamp;state="已读回快照";
-     if(snapshot.Value.TryGetValue("capturedAt",out captured)&&DateTimeOffset.TryParse(Convert.ToString(captured,CultureInfo.InvariantCulture),CultureInfo.InvariantCulture,DateTimeStyles.None,out timestamp))state=OriginalReadingClock(timestamp)+" 快照";
-     if(labels.Count==4)return;
-    }
-   }
-   if(labels.Count==0){labels.AddRange(new[]{"CPU","机箱 1","机箱 2"});values.AddRange(new[]{"— RPM","— RPM","— RPM"});}
+   return OriginalMonitoringLayout(false);
   }
 
   Border OriginalFanModes() {
@@ -153,9 +108,12 @@ namespace RogControl {
   }
 
   string OriginalProductImage(string target) {
-   // Local preview assets retain their original bytes. Public candidates
-   // omit ASUS images until redistribution permission is verified; the
-   // source manifest remains available, and missing assets use a placeholder.
+   // Product images keep their original canvas and aspect. The metadata
+   // records official sources; public builds do not bundle ASUS artwork.
+   string previewImageRoot=AppDomain.CurrentDomain.GetData("OpenAC.ProductImageRoot") as string;
+   if(!String.IsNullOrWhiteSpace(previewImageRoot)&&new[]{"motherboard","keyboard","mouse","headset","fan","gpu","receiver"}.Contains(target,StringComparer.Ordinal)) {
+    try{string previewImage=Path.Combine(Path.GetFullPath(previewImageRoot),target+".png");if(File.Exists(previewImage))return previewImage;}catch{}
+   }
    string bundled=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","products",target+".png");
    if(File.Exists(bundled))return bundled;
    string cache=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),@"Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ProductPNG");
@@ -190,8 +148,6 @@ namespace RogControl {
      string cacheKey=path+"|"+width.ToString(CultureInfo.InvariantCulture)+"|"+height.ToString(CultureInfo.InvariantCulture);BitmapSource source;
      if(!originalImageCache.TryGetValue(cacheKey,out source)) {
       var bitmap=new BitmapImage();bitmap.BeginInit();bitmap.CacheOption=BitmapCacheOption.OnLoad;bitmap.DecodePixelWidth=(int)Math.Ceiling(width*2);bitmap.UriSource=new Uri(path,UriKind.Absolute);bitmap.EndInit();bitmap.Freeze();source=bitmap;
-      string officialRoot=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","products")+Path.DirectorySeparatorChar;
-      if(path.StartsWith(officialRoot,StringComparison.OrdinalIgnoreCase))source=OriginalTransparentBounds(source);
       originalImageCache[cacheKey]=source;
      }
      var image=new Image{Source=source,Stretch=Stretch.Uniform,HorizontalAlignment=HorizontalAlignment.Stretch,VerticalAlignment=VerticalAlignment.Stretch};
@@ -201,14 +157,5 @@ namespace RogControl {
    return slot;
   }
 
-  BitmapSource OriginalTransparentBounds(BitmapSource source) {
-   // Trim only unused transparent canvas for display. The downloaded ASUS
-   // files retain their original bytes and the product aspect never changes.
-   var rgba=new FormatConvertedBitmap(source,PixelFormats.Bgra32,null,0);int width=rgba.PixelWidth,height=rgba.PixelHeight,stride=width*4;
-   byte[] pixels=new byte[stride*height];rgba.CopyPixels(pixels,stride,0);int left=width,top=height,right=-1,bottom=-1;
-   for(int y=0;y<height;y++)for(int x=0;x<width;x++)if(pixels[y*stride+x*4+3]>0){left=Math.Min(left,x);top=Math.Min(top,y);right=Math.Max(right,x);bottom=Math.Max(bottom,y);}
-   if(right<left||bottom<top)return source;
-   var cropped=new CroppedBitmap(source,new Int32Rect(left,top,right-left+1,bottom-top+1));cropped.Freeze();return cropped;
-  }
  }
 }

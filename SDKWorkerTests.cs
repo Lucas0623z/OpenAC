@@ -26,6 +26,7 @@ internal static class SDKWorkerTests
     static Color LastTop,LastCenter;
     static bool IgnoreProfileWrite;
     static bool OmitFanEffects;
+    static bool ZeroSensorValues;
     static Dictionary<string,object> Object(params object[] pairs) { var d=new Dictionary<string,object>();for(int n=0;n<pairs.Length;n+=2)d[(string)pairs[n]]=pairs[n+1];return d; }
     static void Assert(bool condition,string label) { if(!condition)throw new Exception("FAIL "+label);Count++; }
     static Dictionary<string,object> Reply(object request) { return Json.Deserialize<Dictionary<string,object>>(SDKWorker.HandleLine(Json.Serialize(request))); }
@@ -63,7 +64,7 @@ internal static class SDKWorkerTests
         if(f=="2") { if(!IgnoreProfileWrite)CurrentProfile=function.SelectSingleNode("profiles").OuterXml;return Ack; }
         if(f=="26")return FreeSpace;
         if(f=="27") { LastStaged=function.SelectSingleNode("settings/media_transfer/path").InnerText;using(var image=new Bitmap(LastStaged)){LastWidth=image.Width;LastHeight=image.Height;LastTop=image.GetPixel(360,0);LastCenter=image.GetPixel(360,640);}return Ack; }
-        if(f=="36")return "<root><sensor><id>61440</id><value>4500</value></sensor><sensor><id>67117057</id><default_name>GPU</default_name><type>1</type><value>48.5</value></sensor></root>";
+        if(f=="36")return "<root><sensor><id>61440</id><value>4500</value></sensor><sensor><id>67117057</id><default_name>GPU</default_name><type>1</type><value>"+(ZeroSensorValues?"0":"48.5")+"</value></sensor></root>";
         if(f=="24"||f=="37"||f=="29")return Ack;
         throw new Exception("Unexpected synthetic LCD function "+f);
     }
@@ -156,6 +157,11 @@ internal static class SDKWorkerTests
             Assert(IsOk(sensorReply)&&Calls.Count==1&&Function(Calls[0])=="36","sensor query is a single read");
             Assert(first["value"]==null&&!(bool)first["valueReadbackConfirmed"],"duplicate native sensor IDs do not fabricate values");
             Assert(Convert.ToDouble(gpu["value"])==48.5&&(bool)gpu["valueReadbackConfirmed"],"unique exact sensor finite value");
+            ZeroSensorValues=true;Calls.Clear();var zeroResponse=Reply(Object("op","sensors","kind","lcd","deviceId","7299","sensorIds",new[]{"sensor-2"}));
+            var zero=(Dictionary<string,object>)((System.Collections.IList)Data(zeroResponse)["sensors"])[0];
+            Assert(IsOk(zeroResponse)&&Calls.Count==1&&Function(Calls[0])=="36","zero sample stays a single pure query");
+            Assert(zero["value"]==null&&!(bool)zero["valueReadbackConfirmed"]&&(bool)zero["placeholder"],"zero SDK temperature is not presented as live telemetry");
+            Assert(Convert.ToDouble(zero["rawNativeValue"])==0&&(bool)zero["nativeValueReadbackConfirmed"]&&zero["unit"]==null,"raw response is retained without inventing units");ZeroSensorValues=false;
             string fixtureDir=Path.Combine(Path.GetTempPath(),"RogControl-synthetic-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixtureDir);
             try {
                 string source=Path.Combine(fixtureDir,"source.jpg"),notJpeg=Path.Combine(fixtureDir,"invalid.jpg");

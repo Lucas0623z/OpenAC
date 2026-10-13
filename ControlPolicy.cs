@@ -24,7 +24,7 @@ namespace RogControl {
    RoutedEventHandler changed=(s,e)=>{if(busy||closing||render)return;hardwareControlPolicy.SetEnabled(enable.IsChecked==true);ShowPage(page);};
    enable.Checked+=changed;enable.Unchecked+=changed;controls.Children.Add(enable);
    controls.Children.Add(Paragraph("用于键鼠、耳机、风扇控制器、LCD、Windows 音量和手动情境配置。每次启动默认关闭；读取、导出和编辑本地草稿仍可使用。",12,muted));
-   controls.Children.Add(Paragraph("未完成实机验证的设置仍标为实验性。神光同步使用灯效页面上的独立试用开关。",12,muted));
+   controls.Children.Add(Paragraph("未完成实机验证的设置仍标为实验性。Aura Sync 也使用本次运行的设备控制开关。",12,muted));
    content.Children.Add(Card(controls));
   }
  }

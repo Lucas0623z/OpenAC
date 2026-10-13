@@ -30,6 +30,14 @@ namespace RogControl {
   public AsusCatalogResult AsusCatalog;
   public int AsusCatalogOsId;
   public string AsusCatalogMessage;
+  public List<AuraSyncTarget> AuraSyncTargets;
+  public string[] AuraSyncSelected;
+  public AuraSyncResult AuraSyncResult;
+  public Dictionary<string,AuraOwnershipResult> AuraOwnershipResults;
+  public string AuraSyncMessage;
+  public Guid WindowsPowerDraftScheme;
+  public uint? WindowsPowerDraftAc,WindowsPowerDraftDc;
+  public Dictionary<string,uint> WindowsDisplayDraft;
  }
  public partial class MainWindow {
   System.Windows.Threading.DispatcherTimer previewStateTimer;
@@ -41,7 +49,7 @@ namespace RogControl {
     try{string directory=System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".preview");string path=System.IO.Path.Combine(directory,"resume.json"),temporary=path+".new";System.IO.File.WriteAllText(temporary,CapturePreviewState(),new System.Text.UTF8Encoding(false));if(System.IO.File.Exists(path))System.IO.File.Replace(temporary,path,null);else System.IO.File.Move(temporary,path);}catch{}
    };previewStateTimer.Start();
   }
-  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&!controlling&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
+  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&!monitorBusy&&!controlling&&!AuraSyncBusy&&!AuraSyncConnectionsActive&&!windowsSystemWriting&&windowsPowerUndo==null&&windowsDisplayUndo==null&&(windowsSystemTask==null||windowsSystemTask.IsCompleted)&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
   [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="IsWindowEnabled")][return:System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]static extern bool PreviewWindowEnabled(IntPtr handle);
   public string PreviewPage {get{return page;}}
   public bool PreviewHardwareWritesEnabled {get{return HardwareWritesEnabled||experimentalLighting;}}
@@ -57,7 +65,9 @@ namespace RogControl {
     Selected=new List<string>(selected).ToArray(),Effect=effect,Color=color,Brightness=brightness,Speed=speed,
     MacroDraft=macroEditor.Current,MacroSelection=macroSelection,ScenarioDraft=scenarioDraft,
     History=history.ToArray(),UpdateResult=openAcUpdate,UpdateMessage=openAcUpdateMessage,PageReadAttempts=pageReadAttempts,
-    AsusCatalog=asusCatalog,AsusCatalogOsId=asusCatalogOsId,AsusCatalogMessage=asusCatalogMessage
+    AsusCatalog=asusCatalog,AsusCatalogOsId=asusCatalogOsId,AsusCatalogMessage=asusCatalogMessage,
+    AuraSyncTargets=auraSyncTargets,AuraSyncSelected=new List<string>(auraSyncSelected).ToArray(),AuraSyncResult=auraSyncResult,AuraOwnershipResults=auraOwnershipResults,AuraSyncMessage=auraSyncMessage,
+    WindowsPowerDraftScheme=windowsPowerDraftScheme,WindowsPowerDraftAc=windowsPowerDraftAc,WindowsPowerDraftDc=windowsPowerDraftDc,WindowsDisplayDraft=windowsDisplayDraft
    };
    return new JavaScriptSerializer{MaxJsonLength=4194304}.Serialize(state);
   }
@@ -79,6 +89,12 @@ namespace RogControl {
    openAcUpdate=GitHubUpdateCatalog.NormalizeCachedResult(state.UpdateResult);openAcUpdateMessage=openAcUpdate==null?"":state.UpdateMessage??"";
    CopyPreviewMap(pageReadAttempts,state.PageReadAttempts);
    asusCatalog=state.AsusCatalog;if(state.AsusCatalogOsId>0&&state.AsusCatalogOsId<=1000)asusCatalogOsId=state.AsusCatalogOsId;asusCatalogMessage=state.AsusCatalogMessage??"";
+   auraSyncTargets.Clear();if(state.AuraSyncTargets!=null)auraSyncTargets.AddRange(state.AuraSyncTargets);
+   auraSyncSelected.Clear();foreach(string id in state.AuraSyncSelected??new string[0])if(auraSyncTargets.Exists(target=>target!=null&&target.Id==id&&target.CanStaticRgb&&target.Online))auraSyncSelected.Add(id);
+   auraSyncResult=state.AuraSyncResult;auraSyncMessage=state.AuraSyncMessage??"";
+   auraOwnershipResults.Clear();if(state.AuraOwnershipResults!=null)foreach(var pair in state.AuraOwnershipResults)if(pair.Value!=null&&pair.Value.Target!=null&&pair.Value.Target.Id==pair.Key)auraOwnershipResults[pair.Key]=pair.Value;
+   windowsPowerDraftScheme=state.WindowsPowerDraftScheme;windowsPowerDraftAc=state.WindowsPowerDraftAc;windowsPowerDraftDc=state.WindowsPowerDraftDc;windowsPowerRestoredDraft=state.Page=="Windows 电源";
+   CopyPreviewMap(windowsDisplayDraft,state.WindowsDisplayDraft);
    if(FinitePreviewNumber(state.Width)&&FinitePreviewNumber(state.Height)){Width=Math.Max(MinWidth,state.Width);Height=Math.Max(MinHeight,state.Height);}
    if(FinitePreviewNumber(state.Left)&&FinitePreviewNumber(state.Top)){WindowStartupLocation=WindowStartupLocation.Manual;Left=state.Left;Top=state.Top;}
    if(state.Maximized)WindowState=WindowState.Maximized;

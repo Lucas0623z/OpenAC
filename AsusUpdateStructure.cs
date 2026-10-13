@@ -17,6 +17,9 @@ namespace RogControl {
    Header("工具","");
    var entry=Button("驱动程序更新",()=>ShowPage("驱动程序更新"));
    entry.HorizontalAlignment=HorizontalAlignment.Left;entry.MinWidth=180;content.Children.Add(entry);
+   var power=Button("Windows 电源",()=>ShowPage("Windows 电源"));power.HorizontalAlignment=HorizontalAlignment.Left;power.MinWidth=180;content.Children.Add(power);
+   var display=Button("屏幕设置",()=>ShowPage("屏幕设置"));display.HorizontalAlignment=HorizontalAlignment.Left;display.MinWidth=180;content.Children.Add(display);
+   var battery=Button("电池信息",()=>ShowPage("电池信息"));battery.HorizontalAlignment=HorizontalAlignment.Left;battery.MinWidth=180;content.Children.Add(battery);
   }
 
   static int DefaultAsusCatalogOsId() {

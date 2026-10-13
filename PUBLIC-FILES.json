@@ -54,7 +54,20 @@
     "SupportedDevicesCatalog.cs",
     "NotebookWorker.cs",
     "AsusDriverCatalog.cs",
-    "AsusUpdateStructure.cs"
+    "AsusUpdateStructure.cs",
+    "AuraSyncCoordinator.cs",
+    "FanModeWorker.cs",
+    "MonitoringModels.cs",
+    "MonitoringLayout.cs",
+    "PreviewAssets.cs",
+    "TelemetryWorker.cs",
+    "WindowsTelemetry.cs",
+    "WindowsPower.cs",
+    "WindowsToolsStructure.cs",
+    "WindowsDisplay.cs",
+    "WindowsDisplayStructure.cs",
+    "WindowsBattery.cs",
+    "WindowsBatteryStructure.cs"
   ],
   "buildFiles": [
     "app.manifest",
@@ -86,7 +99,19 @@
     "installer/InstallerTests.cs",
     "GitHubUpdateCatalogTests.cs",
     "NotebookWorkerTests.cs",
-    "AsusDriverCatalogTests.cs"
+    "AsusDriverCatalogTests.cs",
+    "AuraSyncCoordinatorTests.cs",
+    "FanModeWorkerTests.cs",
+    "MonitoringTests.cs",
+    "PeripheralLightingTests.cs",
+    "TelemetryWorkerTests.cs",
+    "WindowsTelemetryTests.cs",
+    "WindowsPowerTests.cs",
+    "WindowsToolsTests.cs",
+    "WindowsDisplayTests.cs",
+    "WindowsDisplayGuiTests.cs",
+    "WindowsBatteryTests.cs",
+    "WindowsBatteryGuiTests.cs"
   ],
   "documentationFiles": [
     "README.md",
@@ -114,7 +139,16 @@
     "NotebookWorker-protocol.md",
     "Asus-Public-Catalog.md",
     "Peripheral-Protocol-Progress.md",
-    "OpenSourceInterfaces.md"
+    "OpenSourceInterfaces.md",
+    "AuraSync-Implementation.md",
+    "FanModeWorker-protocol.md",
+    "GHelperFeatureParity.md",
+    "Monitoring-Implementation.md",
+    "Peripheral-Lighting-Protocol.md",
+    "TelemetryWorker-protocol.md",
+    "WindowsPower-Implementation.md",
+    "WindowsDisplay-Implementation.md",
+    "WindowsBattery-Implementation.md"
   ],
   "metadataFileMappings": [
     {
@@ -156,15 +190,16 @@
   "distributionForm": "free_open_source_and_unsigned_preview_installer",
   "repository": "https://github.com/Lucas0623z/OpenAC",
   "previewLimitations": [
-    "Unsigned installer; actual installation/uninstallation not performed on the developer PC",
-    "Incomplete hardware write validation; GUI controls default off",
-    "ASUS SDK still required for LCD/fan; full Aura Sync and original component updater unfinished"
+    "Unsigned installer baseline; actual installation/uninstallation not performed",
+    "Hardware setting modifications in this development phase tested with fake backends only; session writes default off",
+    "Fan Xpert native transport disconnected; all-device Aura, complete G-Helper functionality and all official hardware controls unfinished",
+    "Mobile SCI preparation covers seven exact models without mobile hardware verification; battery WMI provider not physically tested on this desktop"
   ],
   "completedChecks": [
-    "Development core: 1119 pure checks and fresh allowlist-only source rebuild passed",
-    "UI: 40 checks and 47 page/tab states at 1538/1180 widths (94 unshown renders); catalogue 28 checks; ASUS update UI 11 checks",
-    "Live preview: state transfer, compiler-failure preservation, runtime-staging-failure preservation and page-preserving host restart tested",
-    "Public read-only requests: OpenAC GitHub releases; ASUS current board plus GA402RK and RC71L catalogues; no package execution or flash",
-    "Published installer baseline: 130 pure checks and payload verification; no real install/uninstall and no new installer release"
+    "Development core: 3163 pure checks passed, including explicit lighting-return state transfer; no native setters or shown test windows",
+    "UI: 50 page/tab states at 1538/1180 widths (100 unshown renders), plus 15 battery states at both widths (30 renders); zero horizontal overflow in audited states",
+    "Live preview: same host remains open, data-only restoration, default-off writes, guarded active actions and compiler-failure preservation",
+    "Real read-only: Windows/NVIDIA telemetry, four Windows power schemes and AC/DC Boost, two displays and refresh-rate candidates; desktop has no system battery; keyboard/mouse lighting getters",
+    "Published installer baseline remains unchanged; no new installer release and no real install/uninstall"
   ]
 }

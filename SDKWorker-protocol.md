@@ -249,6 +249,12 @@ LCD `scan` now accepts an optional exact `deviceId`: `7124` (ROG MAXIMUS Z890 EX
 
 Latest synthetic suite: **310 checks passed**, hardware writes 0, installed native DLL loads 0. New cases cover exact requested-model routing, mismatched capability exclusion, model-specific preset names, and malformed firmware preventing setters.
 
+### Sensor zero placeholders and shared AIO mutex
+
+A permitted local GET36 read returned zero for five selected clock/temperature sensors, without a validity flag or unit. `sensors` now keeps the exact finite number in `rawNativeValue` / `nativeValueReadbackConfirmed`, but zero type1/type4 remains `value:null,valueReadbackConfirmed:false,placeholder:true`. This is conservative uncertainty, not a claim that a zero sensor could never exist. Existing nonzero unitless values are native numbers only; `unit:null` does not establish MHz/C. The stricter new `TelemetryWorker` requires an explicit recognized capability unit before confirming a physical reading. Full evidence and interface are in [TelemetryWorker-protocol.md](TelemetryWorker-protocol.md).
+
+LCD native requests, including ordinary loader initialization, now acquire `Local\OpenAC.AioSdk` without waiting. TelemetryWorker uses the same lock. Another owned AIO query returns `SDK_BUSY`; this does not coordinate with unrelated ASUS programs. Test injection bypasses the mutex/native loader entirely. Updated related suite: **313 checks passed**, actual hardware writes0/installed DLL loads0.
+
 ## Unstable mouse and keyboard SDKs
 
 Experimental mouse/keyboard scan/read templates remain off by default and all their writes are rejected. Enumeration succeeded once each but subsequent attempts terminated with `0xC0000409`; MainSDK forwarding also crashed. Do not poll/retry these known unstable paths.

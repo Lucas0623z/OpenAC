@@ -23,6 +23,7 @@ namespace RogControl {
   }
   string PageReadKey(string target) {
    if(target=="device:motherboard")return target+":"+originalMotherboardTab;
+   if(target=="Windows 电源"||target=="屏幕设置"||target=="电池信息")return target;
    return target=="设备"||target=="灯效 & Aura Sync"||target=="神光同步"||target=="device:keyboard"||target=="device:mouse"||target=="device:headset"||target=="device:fan"||target=="device:receiver"?target:null;
   }
   void QueuePageRead(string target){if(!render&&!closing&&PageReadKey(target)!=null)pendingPageRead=target;}
@@ -30,6 +31,9 @@ namespace RogControl {
    if(target!=page||closing||render)return;
    switch(target) {
     case "设备":await ReadOriginalDiscovery();break;
+    case "Windows 电源":await ReadWindowsPower();break;
+    case "屏幕设置":await ReadWindowsDisplay();break;
+    case "电池信息":await ReadWindowsBattery();break;
     case "灯效 & Aura Sync":case "神光同步":if(!controlling)await ScanAura();break;
     case "device:keyboard":await ReadGearDevice("keyboard");break;
     case "device:mouse":await ReadGearDevice("mouse");break;

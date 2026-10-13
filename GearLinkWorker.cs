@@ -101,7 +101,7 @@ internal static partial class GearLinkWorker
     internal static Dictionary<string,object> Read(GearDescriptor d,Dictionary<string,object> request=null)
     {
         string kind=Kind(d.Pid); var state=d.Metadata();
-        var snapshot=Obj("modelPid",d.Pid,"batteryPercent",null,"charging",null,"sleepMinutes",null,"sleepNever",null,"eqEnabled",null,"eqGains",null,"eqRawGains",null,"pollingRate",null,"dpiStages",null,"activeDpiStage",null,"angleSnapping",null,"motionSync",null,"firmware",null,"dongleFirmware",null);
+        var snapshot=Obj("modelPid",(int)d.Pid,"batteryPercent",null,"charging",null,"sleepMinutes",null,"sleepNever",null,"eqEnabled",null,"eqGains",null,"eqRawGains",null,"pollingRate",null,"dpiStages",null,"activeDpiStage",null,"angleSnapping",null,"motionSync",null,"firmware",null,"dongleFirmware",null);
         var errors=new List<object>(); var capabilities=new List<string>(); bool online=false, confirmed=false;
         state["snapshot"]=snapshot;state["capabilities"]=capabilities;state["readCapabilities"]=capabilities;state["setCapabilities"]=new string[0];state["settingOptions"]=FeatureOptions(kind,d.Pid);state["errors"]=errors;state["readbackConfirmed"]=false;state["writeConfirmed"]=false;state["connected"]=true;state["online"]=false;
         if(kind=="omni") {
@@ -623,4 +623,3 @@ internal static class GearBoundedIoTests
         }
     }
 }
-

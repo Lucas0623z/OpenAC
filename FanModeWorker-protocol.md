@@ -1,0 +1,52 @@
+# Desktop Fan Xpert protocol preparation
+
+`FanModeWorker.cs` is independently written MIT code. It is a **pure protocol/parser preparation with a disconnected runtime**, not a working Fan Xpert hardware backend. It has no P/Invoke, SDK loader, HTTP broker, registry, WMI, cache reader or other native transport. It cannot initialize, calibrate, stress or set a fan. Its runtime status has `sourcePrepared:true,transportConnected:false,supportsRead:false,supportsWrite:false,hardwareValidated:false`. It returns no guessed headers and no current preset.
+
+This differs from SDKWorker's EURUX type32 controller. A EURUX port RPM or its PWM curve must never be labelled as a CPU/Chassis/Radiator/Water Pump motherboard header. It also differs from NotebookWorker's mobile SCI fan endpoints.
+
+## Source-confirmed interface facts
+
+Installed source: `C:\Program Files (x86)\ASUS\ArmouryDevice\modules\fanXpert\index.js`; model caps/defaults: `View\2dfe216d-3481-4684-ad4d-2566bd7cfe4f\resources\src\_ref`. The module uses device type **50**, source fallback interface model **5000**. That interface key does not prove the actual motherboard identity. No ASUS source file or binary is redistributed.
+
+| Function | Proven wrapper | Parameters / response facts |
+|---|---|---|
+| 17 | getMbif | No parameters; returncode16/23/24 means supported in the original wrapper; boardname must separately match exact Windows motherboard identity |
+| 0 | getCapability | No fan parameters; fancount/fan key/name/fantype, multisource and flags identify actual motherboard headers |
+| 1 | getFanProfile | `<fan key="nativeHeaderId"/>`; profile contains header/name, rpmmode, curvedata, other range/response fields |
+| 12 | getFanRPM | `<fan key="nativeHeaderId"/>`; response fan key and rpm |
+| 13 | getCurrentPointFromSensor | fan key plus exact-case `<SensorIndex key="nativeSensorIndex"/>`; currentpoint yellow_x/y and blue_x/y |
+| 16 | getTemperatureFromSensor | exact-case SensorIndex; sensor key and original spelling `tempature` |
+| 3 | setFanMode | `<index>N</index>`; source caps confirm silent3, standard2, turbo1, fullSpeed0 |
+
+The enum also names function14 GET_CURRENT_POINT_FROM_EC. Its complete wrapper/response flow was not established in this stage, so it is **excluded** from the encoder allowlist. Source naming alone does not justify guessing additional parameters.
+
+Read encoders use only those exact functions. MBIF is encoded first without identity parameters. Other builders require separately parsed exact MBIF board facts; header reads require capability-derived key/name. No input can choose device type, interface model, caller, DLL path, arbitrary XML or raw function number outside the proven list. The pure builders do not establish a transport.
+
+`FanModeRules.BoardInfo` rejects unsupported returncodes, empty names, wrong function identity and mismatched independently read WMI board name. `Headers` requires matching native count and unique exact header IDs, bounded lists, nonempty name/type and known boolean flags. A zero-header capability is preserved as empty. There is no fixed CPU/header order or static assumption that header0 is CPU.
+
+`Rpm` requires exactly one reply for the queried header and a nonnegative integer RPM. Its upper bound100000 is a parser sanity limit, **not a confirmed electrical/calibrated fan range** and cannot authorize a fixed-RPM setter. `Profile` preserves finite native curve x/y and the original RPM-mode code, but does not invent curve units/ranges or convert it into an active global preset. All XML disallows DTD/external resolution and is limited to1MiB.
+
+`PresetDraft` only builds a reviewable source-confirmed command; it does not transmit it. There is **no proven getter for the active global silent/standard/turbo/fullSpeed preset** in this stage. A fan's `rpmmode` is not that preset. The strict write-basis guard requires legitimate transport, fresh exact board/header capability, explicit session authorization and an established mode readback path. All of these are absent from the disconnected runtime, whose set requests are rejected before any I/O. No successful draft encoding is advertised as a successful hardware write.
+
+## Why the runtime stays disconnected
+
+The original page initialization includes INIT_SDK4 and additional refresh/configuration commands; alert initialization may also enter AI_COOLING_PROFILE22 with stress3. Replaying the entire page flow would violate this read-only stage. The prior ordinary MainSDK service paths were rejected for this independently identified caller; they were not retried. No trusted process name, session, authentication material or vendor handle was impersonated/reused.
+
+Installed AiSuite `output.xml` was observed as a single recent GET13 reply with fan key0/currentpoint54,126,-1,-1. It had no board identity, header name, units or complete capability/profile snapshot. It cannot supply confirmed CPU fan/temperature/PWM/RPM or current preset and is neither connected to GUI nor polled by this worker. Static MB_Home/FAN libraries did not establish an independently callable getter ABI or a public shared-memory schema. No guessed native signature or low-level SMBus/ASIO operation was invoked.
+
+A future legitimate transport must first establish its documented ABI/caller access and pure-read initialization requirements, then verify MBIF17 → capability0 → each explicit profile1/RPM12. A failure or permission rejection must stop this sequence, not trigger INIT/calibration/stress. Preset writes require a new reviewed result/readback contract; this file does not supply an imaginary GetPreset API.
+
+## Runtime JSON
+
+```json
+{"id":1,"op":"status"}
+{"id":2,"op":"scan"}
+{"id":3,"op":"read"}
+{"id":4,"op":"set"}
+```
+
+Only id/op fields are recognized. Status returns honest disconnected metadata, empty headers, currentPreset null and zero native opens/hardware writes. Scan/read return `NATIVE_TRANSPORT_UNVERIFIED`. Set returns `WRITE_DISABLED`. Unknown/override fields are invalid before any I/O. This runtime is optional research plumbing; users do not need an additional disabled page or cached-data view.
+
+## Pure checks
+
+Compile with Framework csc and `System.Web.Extensions.dll`; tests add both sources with `/main:FanModeWorkerTests`. Result: **84 checks passed**, native transports0/cache reads0/hardware writes0. Tests cover exact board identity/status, unique native headers/count, zero stopped RPM, mismatch/invalid values, profile/preset distinction, exact XML and preset indexes, forbidden INIT/calibration/stress/extra commands, write-basis gates and disconnected runtime truthfulness. No Fan Xpert native call was made in this stage.

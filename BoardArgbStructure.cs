@@ -20,7 +20,7 @@ namespace RogControl {
    target.Children.Add(Paragraph(boardArgbMessage,12,muted));
    var live=worker.Running&&boardArgbSnapshot!=null?GearArray(boardArgbSnapshot,"devices"):null;
    var headers=new List<IDictionary<string,object>>();string firmware="—";int onboardZones=0;
-   if(live!=null)foreach(var rawDevice in live){var device=rawDevice as IDictionary<string,object>;if(device==null)continue;string id=OriginalStateText(device,"id","");if(!devices.Any(d=>d.id==id))continue;firmware=OriginalStateText(device,"firmware","—");var zones=GearArray(device,"zones");if(zones==null)continue;foreach(var rawZone in zones){var zone=rawZone as IDictionary<string,object>;if(zone==null)continue;if(OriginalStateFlag(zone,"addressable")==true)headers.Add(zone);else onboardZones++;}}
+   if(live!=null)foreach(var rawDevice in live){var device=rawDevice as IDictionary<string,object>;if(device==null||OriginalStateText(device,"controllerFamily","")!="motherboard")continue;string id=OriginalStateText(device,"id","");if(!devices.Any(d=>d.id==id))continue;firmware=OriginalStateText(device,"firmware","—");var zones=GearArray(device,"zones");if(zones==null)continue;foreach(var rawZone in zones){var zone=rawZone as IDictionary<string,object>;if(zone==null)continue;if(OriginalStateFlag(zone,"addressable")==true)headers.Add(zone);else onboardZones++;}}
    var summary=new Grid{Margin=new Thickness(0,20,0,22)};summary.ColumnDefinitions.Add(new ColumnDefinition());summary.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});summary.Children.Add(Label("已设置灯珠总数",14,text));var total=Label("— / —",16,muted);total.Margin=new Thickness(0);Grid.SetColumn(total,1);summary.Children.Add(total);target.Children.Add(summary);
    target.Children.Add(Paragraph("当前数量、总数上限和 Gen 1 / Gen 2 模式无法读回，设置与重新检测暂不可用。",12,muted));
    var cards=new WrapPanel{Margin=new Thickness(0,12,0,14)};
@@ -45,13 +45,11 @@ namespace RogControl {
   async Task ReadBoardArgbChannels() {
    if(busy||closing||render)return;
    boardArgbSnapshot=null;boardArgbMessage="正在读取主板 USB 通道…";
-   // Reuse the shared scan lifecycle; no second handle, automatic light write or
-   // dangerous Armoury Crate motherboard/HAL query is introduced here.
-   await ScanAura();
-   if(closing)return;
-   if(devices.Count==0){boardArgbMessage=auraMessage;ShowPage(page);return;}
    busy=true;
    try{
+    var scan=await worker.Request(new Dictionary<string,object>{{"op","scan"}});
+    if(!scan.ok)throw new InvalidOperationException(scan.error);devices=scan.devices??new List<AuraDevice>();
+    if(devices.Count==0){boardArgbMessage="未找到主板灯控。";return;}
     var snapshot=await worker.Request<Dictionary<string,object>>(new Dictionary<string,object>{{"op","status"}});
     if(OriginalStateFlag(snapshot,"ok")!=true)throw new InvalidOperationException(OriginalStateText(snapshot,"error","通道读取失败。"));
     boardArgbSnapshot=snapshot;boardArgbMessage="已读取逻辑通道。实际灯珠数量与当前 Gen 模式尚未读回。";

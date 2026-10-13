@@ -64,7 +64,7 @@ internal static class SDKWorker
     }
     sealed class SensorCapability {
         public string Id,NativeId,Name,DefaultName; public int NativeType;
-        public Dictionary<string,object> Snapshot() { return Obj("id",Id,"nativeId",NativeId,"name",Name,"defaultName",DefaultName,"nativeType",NativeType,"value",null,"valueReadbackConfirmed",false); }
+        public Dictionary<string,object> Snapshot() { return Obj("id",Id,"nativeId",NativeId,"name",Name,"defaultName",DefaultName,"nativeType",NativeType,"unit",null,"value",null,"rawNativeValue",null,"nativeValueReadbackConfirmed",false,"valueReadbackConfirmed",false,"placeholder",false); }
     }
     sealed class FanBounds {
         public int RpmMin,RpmMax,DutyMin,DutyMax;
@@ -125,6 +125,19 @@ internal static class SDKWorker
     }
     static string RequestText(string xml) {
         if(TestTransport!=null) return TestTransport(xml);
+        if(Kind=="lcd") {
+            using(var mutex=new System.Threading.Mutex(false,"Local\\OpenAC.AioSdk")) {
+                bool held=false;
+                try {
+                    try { held=mutex.WaitOne(0); } catch(System.Threading.AbandonedMutexException) { held=true; }
+                    if(!held) throw new WorkerError("SDK_BUSY","Another OpenAC AIO query is active");
+                    return RequestTextNative(xml);
+                } finally { if(held)mutex.ReleaseMutex(); }
+            }
+        }
+        return RequestTextNative(xml);
+    }
+    static string RequestTextNative(string xml) {
         Init();
         IntPtr input=Marshal.StringToHGlobalUni(xml),output=IntPtr.Zero;
         int bytes=0,flag=0;
@@ -253,7 +266,11 @@ internal static class SDKWorker
                 if(match!=null) ambiguous=true;match=node;
             }
             double value;string raw=Text(match,"value");
-            if(!ambiguous&&double.TryParse(raw,NumberStyles.Float,CultureInfo.InvariantCulture,out value)&&!double.IsNaN(value)&&!double.IsInfinity(value)) { snapshot["value"]=value;snapshot["valueReadbackConfirmed"]=true; }
+            if(!ambiguous&&double.TryParse(raw,NumberStyles.Float,CultureInfo.InvariantCulture,out value)&&!double.IsNaN(value)&&!double.IsInfinity(value)) {
+                snapshot["rawNativeValue"]=value;snapshot["nativeValueReadbackConfirmed"]=true;
+                if(value==0&&(sensor.NativeType==1||sensor.NativeType==4)) { snapshot["placeholder"]=true;snapshot["error"]="Zero temperature or frequency is unconfirmed; the local SDK returned all-zero samples"; }
+                else { snapshot["value"]=value;snapshot["valueReadbackConfirmed"]=true; }
+            }
             else snapshot["error"]=ambiguous?"Native sensor identity is ambiguous":"No finite value was returned for the requested capability";
             values.Add(snapshot);
         }

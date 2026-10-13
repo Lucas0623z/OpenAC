@@ -26,7 +26,7 @@ namespace RogControl {
    navigation[name]=button;parent.Children.Add(button);
   }
   void UpdateOriginalNavigation() {
-   string current=page.StartsWith("device:",StringComparison.Ordinal)?"设备":page=="设置"?"更新库":page=="驱动程序更新"?"工具":page;
+   string current=page=="系统监控"?"控制面板":page.StartsWith("device:",StringComparison.Ordinal)?"设备":page=="设置"?"更新库":page=="驱动程序更新"||page=="Windows 电源"||page=="屏幕设置"||page=="电池信息"?"工具":page;
    foreach(var entry in navigation){bool active=entry.Key==current;entry.Value.Background=active?(uiPreferences!=null&&uiPreferences.Theme=="light"?panel:Brush("#302E25")):Brushes.Transparent;entry.Value.BorderBrush=active?accent:Brushes.Transparent;}
   }
   void OpenOriginalDevice(string target){ShowPage("device:"+target);}

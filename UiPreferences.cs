@@ -15,7 +15,7 @@ namespace RogControl {
  }
  public static class UiPreferenceStore {
   public const int MaximumBytes=65536;
-  static readonly string[] pages={"控制面板","设备","灯效 & Aura Sync","情境设置档","宏","GameFirst","游戏库","Fan Xpert","工具","驱动程序更新","更新库","device:motherboard","device:keyboard","device:mouse","device:headset","device:receiver","device:fan","device:gpu"};
+  static readonly string[] pages={"控制面板","系统监控","设备","灯效 & Aura Sync","情境设置档","宏","GameFirst","游戏库","Fan Xpert","工具","驱动程序更新","Windows 电源","屏幕设置","电池信息","更新库","device:motherboard","device:keyboard","device:mouse","device:headset","device:receiver","device:fan","device:gpu"};
   public static bool IsKnownPage(string page){return pages.Contains(page,StringComparer.Ordinal);}
   public static UiPreferenceState Normalize(UiPreferenceState value){
    var normalized=new UiPreferenceState();if(value==null)return normalized;

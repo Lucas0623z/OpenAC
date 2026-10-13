@@ -36,3 +36,16 @@ for changes to `LivePreviewHost.cs` itself. Its private resume snapshot preserve
 the page and tabs across such a host restart; cached update links are revalidated.
 .NET Framework retains loaded assemblies until the host exits, so long preview
 sessions can use more memory; restarting the preview releases those assemblies.
+
+This phase also preserves Aura snapshots/selections and Windows power/display
+drafts as data. Applying settings rechecks their real current state. A running
+monitor read delays replacement; expired readings are hidden while waiting.
+Windows restore points belong to their live controller instance: preview waits
+until the user explicitly keeps or restores that change. Closing does not
+automatically restore settings.
+
+Battery queries share a System semaphore in the stable AppDomain, including
+between byte-loaded assemblies. Caller timeout does not release an unfinished
+provider query. Battery snapshots expire after 30 seconds and ordinary monitor
+readings after 15 seconds. Developer-only `.preview/assets.json` can point
+`productImageRoot` at existing official PNGs; that path and the images are private.
