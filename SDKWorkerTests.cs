@@ -20,7 +20,7 @@ internal static class SDKWorkerTests
     static bool FailPowerReadAfterWrite;
     static int PowerWrites;
     static string Rpm="1200";
-    static string FreeSpace="10485760",CurrentProfile;
+    static string FreeSpace="10485760",CurrentProfile,LcdDetectedId="7299",LcdFirmware="0109";
     static string LastStaged;
     static int LastWidth,LastHeight;
     static Color LastTop,LastCenter;
@@ -50,8 +50,8 @@ internal static class SDKWorkerTests
             if(f=="103"||f=="104"||f=="201"||f=="202")return Ack;
             throw new Exception("Unexpected synthetic fan function "+f);
         }
-        if(f=="0")return "<root><capability><device_list><deviceid>7299</deviceid></device_list><player key='hw_monitor_player'><sensor_list><sensor key='61440'><name>Core #0</name><default_name>Core #0</default_name><type>4</type></sensor><sensor key='61440'><name>Graphics</name><default_name>Graphics</default_name><type>4</type></sensor><sensor key='67117057'><name>GPU</name><default_name>GPU</default_name><type>1</type></sensor><sensor key='57345'><name>Memory Load</name><default_name>Memory Load</default_name><type>6</type></sensor></sensor_list></player></capability></root>";
-        if(f=="5")return "0109";
+        if(f=="0")return "<root><capability><device_list><deviceid>"+LcdDetectedId+"</deviceid></device_list><player key='hw_monitor_player'><sensor_list><sensor key='61440'><name>Core #0</name><default_name>Core #0</default_name><type>4</type></sensor><sensor key='61440'><name>Graphics</name><default_name>Graphics</default_name><type>4</type></sensor><sensor key='67117057'><name>GPU</name><default_name>GPU</default_name><type>1</type></sensor><sensor key='57345'><name>Memory Load</name><default_name>Memory Load</default_name><type>6</type></sensor></sensor_list></player></capability></root>";
+        if(f=="5")return LcdFirmware;
         if(f=="6") { if(FailPowerReadAfterWrite&&PowerWrites>0)throw new Exception("synthetic verification failure");return S0?"0":"1"; }
         if(f=="20")return S5?"0":"1";
         if(f=="1")return CurrentProfile;
@@ -64,10 +64,10 @@ internal static class SDKWorkerTests
         if(f=="26")return FreeSpace;
         if(f=="27") { LastStaged=function.SelectSingleNode("settings/media_transfer/path").InnerText;using(var image=new Bitmap(LastStaged)){LastWidth=image.Width;LastHeight=image.Height;LastTop=image.GetPixel(360,0);LastCenter=image.GetPixel(360,640);}return Ack; }
         if(f=="36")return "<root><sensor><id>61440</id><value>4500</value></sensor><sensor><id>67117057</id><default_name>GPU</default_name><type>1</type><value>48.5</value></sensor></root>";
-        if(f=="24"||f=="37")return Ack;
+        if(f=="24"||f=="37"||f=="29")return Ack;
         throw new Exception("Unexpected synthetic LCD function "+f);
     }
-    static void Configure(string kind) { Calls.Clear();S0=true;S5=true;IgnorePowerWrite=false;Fault="";BadCapability="";FailPowerReadAfterWrite=false;PowerWrites=0;Rpm="1200";FreeSpace="10485760";LastStaged=null;IgnoreProfileWrite=false;OmitFanEffects=false;CurrentProfile="<profiles><profile4><main><single><player key='multi_media_player'><setting><play_device>AIO2_PANEL</play_device><display_time>5000</display_time><group key='0'><type>2</type><source>1</source><index_format>1</index_format></group></setting></player></single></main></profile4></profiles>";Ack="<root><data><function><result>0</result></function></data></root>";SDKWorker.ConfigureSynthetic(kind,Native); }
+    static void Configure(string kind) { Calls.Clear();S0=true;S5=true;IgnorePowerWrite=false;Fault="";BadCapability="";FailPowerReadAfterWrite=false;PowerWrites=0;Rpm="1200";FreeSpace="10485760";LcdDetectedId="7299";LcdFirmware="0109";LastStaged=null;IgnoreProfileWrite=false;OmitFanEffects=false;CurrentProfile="<profiles><profile4><main><single><player key='multi_media_player'><setting><play_device>AIO2_PANEL</play_device><display_time>5000</display_time><group key='0'><type>2</type><source>1</source><index_format>1</index_format></group></setting></player></single></main></profile4></profiles>";Ack="<root><data><function><result>0</result></function></data></root>";SDKWorker.ConfigureSynthetic(kind,Native); }
     static Dictionary<string,object> Light(string area,string effect,int count,int brightness,int speed,string direction,string[] colors) { return Set("fan","lighting","portId","1","area",area,"effect",effect,"fanCount",count,"brightness",brightness,"speed",speed,"direction",direction,"colors",colors); }
     static string Function(string xml) { var doc=new XmlDocument();doc.LoadXml(xml);return doc.SelectSingleNode("/root/device_type/device/function").Attributes["key"].Value; }
     static string Hash(string path) { using(var stream=File.OpenRead(path))using(var sha=SHA256.Create())return Convert.ToBase64String(sha.ComputeHash(stream)); }
@@ -193,8 +193,50 @@ internal static class SDKWorkerTests
             IgnorePowerWrite=true;Calls.Clear();var mismatch=Reply(Set("lcd","powerS0","value",false));Assert(IsOk(mismatch)&&Calls.Count==3&&!(bool)Data(mismatch)["readbackConfirmed"]&&(string)Data(mismatch)["appliedState"]=="mismatch","mismatch preserved no retry");
             Fault="7";Calls.Clear();var nativeFail=Reply(Set("lcd","powerS0","value",false));Assert(!IsOk(nativeFail)&&Calls.Count==2&&(bool)Data(nativeFail)["writeAttempted"],"native write failure metadata");
             Ready("lcd");FailPowerReadAfterWrite=true;Calls.Clear();var failedReadback=Reply(Set("lcd","powerS0","value",false));Assert(IsOk(failedReadback)&&Calls.Count==3&&(bool)Data(failedReadback)["hardwareAcknowledged"]&&!(bool)Data(failedReadback)["readbackConfirmed"]&&Data(failedReadback)["value"]==null,"write acknowledgement survives failed readback");
+            Ready("lcd");Calls.Clear();var media=Reply(Object("id",91,"op","media","kind","lcd","deviceId","7299"));
+            Assert(IsOk(media)&&Calls.Count==2&&Function(Calls[0])=="26"&&Function(Calls[1])=="1","media status uses only space/profile getters");
+            Assert((bool)Data(media)["freeSpaceReadbackConfirmed"]&&Convert.ToInt64(Data(media)["freeSpaceKiB"])==10485760&&!((bool)Data(media)["slotOccupancyReadable"])&&Data(media)["slots"]==null,"space verified without invented slot inventory");
+            Assert(!((bool)Data(media)["animationUploadSupported"])&&((System.Collections.IList)Data(media)["userUploadFormats"]).Count==1,"current motherboard custom media only JPEG by source");
+            RejectNoIO(Object("id",92,"op","media","kind","lcd","deviceId","7299","slot",0),"media query unknown field");
+            Calls.Clear();var selectedSlot=Reply(Set("lcd","selectMedia","slot",31,"durationSeconds",10));
+            Assert(IsOk(selectedSlot)&&Calls.Count==2&&Function(Calls[0])=="2"&&Function(Calls[1])=="1","select existing slot writes profile then reads metadata");
+            Assert(Calls[0].Contains("<type>0</type><source>0</source><index_format>31</index_format>")&&(bool)Data(selectedSlot)["profileReadbackConfirmed"]&&!((bool)Data(selectedSlot)["visualIdentityConfirmed"]),"select JPEG slot exact fields and separate pixel uncertainty");
+            RejectNoIO(Set("lcd","selectMedia","slot",32),"select slot boundary");
+            RejectNoIO(Set("lcd","selectMedia","slot",0,"mediaType","gif"),"unsupported custom animation selector");
+            RejectNoIO(Set("lcd","deleteMedia","slot",0),"slot deletion confirmation missing");
+            RejectNoIO(Set("lcd","deleteMedia","slot",0,"confirmSlotDeletion",false),"slot deletion confirmation false");
+            RejectNoIO(Set("lcd","deleteMedia","slot",0,"confirmSlotDeletion","true"),"slot deletion confirmation type");
+            RejectNoIO(Set("lcd","deleteMedia","slot",-1,"confirmSlotDeletion",true),"slot deletion lower boundary");
+            RejectNoIO(Set("lcd","deleteMedia","slot",32,"confirmSlotDeletion",true),"slot deletion upper boundary");
+            RejectNoIO(Set("lcd","deleteMedia","slot",0,"confirmSlotDeletion",true,"all",true),"no implicit delete-all route");
+            Calls.Clear();var deleted=Reply(Set("lcd","deleteMedia","slot",0,"confirmSlotDeletion",true));
+            Assert(IsOk(deleted)&&Calls.Count==1&&Function(Calls[0])=="29"&&Calls[0].Contains("<media_delete><type>0</type><index>0</index>"),"single-slot delete exact native source XML");
+            Assert((bool)Data(deleted)["hardwareAcknowledged"]&&!((bool)Data(deleted)["deletionReadbackConfirmed"])&&!((bool)Data(deleted)["slotOccupancyReadable"])&&(string)Data(deleted)["appliedState"]=="deletionAcknowledged","deletion ACK never claims empty slot readback");
+            Ack="<root/>";Calls.Clear();var deleteUncertain=Reply(Set("lcd","deleteMedia","slot",31,"confirmSlotDeletion",true));Assert(IsOk(deleteUncertain)&&Calls.Count==1&&!((bool)Data(deleteUncertain)["hardwareAcknowledged"]),"return-only delete uncertainty no retries");Ack="<root><result>0</result></root>";
+            Fault="29";Calls.Clear();var deleteFailed=Reply(Set("lcd","deleteMedia","slot",1,"confirmSlotDeletion",true));Assert(!IsOk(deleteFailed)&&Calls.Count==1&&(bool)Data(deleteFailed)["writeAttempted"],"failed deletion keeps write-attempt uncertainty");Fault="";
+            foreach(string space in new[]{"-1","not a size","2147483648"}){FreeSpace=space;Calls.Clear();var badSpace=Reply(Object("id",93,"op","media","kind","lcd","deviceId","7299"));Assert(!IsOk(badSpace)&&Calls.Count==1&&Function(Calls[0])=="26","invalid media capacity stops before profile "+space);}FreeSpace="10485760";
+            Configure("lcd");RejectNoIO(Object("id",94,"op","media","kind","lcd","deviceId","7299"),"unscanned media query");RejectNoIO(Set("lcd","deleteMedia","slot",0,"confirmSlotDeletion",true),"unscanned media deletion");
             Configure("lcd");RejectNoIO(Set("lcd","brightness","value",50),"unscanned LCD");
             var badKind=Set("lcd","brightness","value",50);badKind["kind"]="fan";RejectNoIO(badKind,"isolated kind");
+            foreach(string lcdId in new[]{"7124","7299","7571"}) {
+                Configure("lcd");LcdDetectedId=lcdId;
+                var familyScan=Reply(Object("id",95,"op","scan","kind","lcd","deviceId",lcdId));
+                Assert(IsOk(familyScan)&&Calls.Count==1&&Calls[0].Contains("<device key=\""+lcdId+"\""),"family scan exact requested model "+lcdId);
+                var devices=(System.Collections.IList)Data(familyScan)["devices"];
+                Assert(devices.Count==1&&(string)((Dictionary<string,object>)devices[0])["deviceId"]==lcdId,"family exact capability identity "+lcdId);
+                var familyRead=Reply(Object("id",96,"op","read","kind","lcd","deviceId",lcdId));
+                Assert(IsOk(familyRead)&&(bool)Data(familyRead)["sourcePrepared"]&&!(bool)Data(familyRead)["hardwareWriteValidated"],"family source versus physical validation "+lcdId);
+                var assets=(System.Collections.IList)Data(familyRead)["presetAssets"];
+                string expected=lcdId=="7124"?"ex_5_launch1.gif":lcdId=="7571"?"x870e_glacial_launch_1.gif":"x870_launch1.gif";
+                Assert(assets.Count==8&&(string)((Dictionary<string,object>)assets[0])["fileName"]==expected,"family source-specific preset filename "+lcdId);
+            }
+            Configure("lcd");var wrongModel=Reply(Object("id",97,"op","scan","kind","lcd","deviceId","7124"));
+            Assert(IsOk(wrongModel)&&((System.Collections.IList)Data(wrongModel)["devices"]).Count==0,"mismatched native identity excluded");
+            RejectNoIO(Object("id",98,"op","scan","kind","lcd","deviceId","9999"),"unknown LCD family");
+            RejectNoIO(Object("id",98,"op","scan","kind","lcd","deviceId","7299","xml","arbitrary"),"scan unknown field");
+            Configure("lcd");LcdFirmware="oops";Reply(Object("id",99,"op","scan","kind","lcd"));var invalidFw=Reply(Object("id",100,"op","read","kind","lcd","deviceId","7299"));
+            Assert(IsOk(invalidFw)&&!(bool)Data(invalidFw)["deviceAlive"]&&!(bool)Data(invalidFw)["supportsWrite"]&&Data(invalidFw)["firmware"]==null,"malformed firmware cannot validate LCD alive");
+            RejectNoIO(Set("lcd","powerS0","value",true),"malformed firmware setter gated");
             var oversized=SDKWorker.HandleLine(new string('x',65537));Assert(!(bool)Json.Deserialize<Dictionary<string,object>>(oversized)["ok"],"request size");
             var nullReply=Json.Deserialize<Dictionary<string,object>>(SDKWorker.HandleLine("null"));Assert(!IsOk(nullReply),"null object");
             var correlated=Reply(Object("id","test-42","op","unknown","kind","lcd"));Assert((string)correlated["id"]=="test-42"&&(string)correlated["kind"]=="lcd"&&(string)correlated["op"]=="unknown","protocol correlation");

@@ -1,6 +1,16 @@
 # Direct Aura USB worker
 
-The x64 worker implements newline-delimited JSON on stdin/stdout. It talks only to the identified ASUS Aura motherboard HID collection, without loading Armoury Crate SDK/HAL components. A process supervisor must retain its own finite deadline because Windows HID enumeration and opening a handle have synchronous metadata calls.
+The x64 worker implements newline-delimited JSON on stdin/stdout. It talks only to the identified and allowlisted ASUS Aura USB HID families, without loading Armoury Crate SDK/HAL components. A process supervisor must retain its own finite deadline because Windows HID enumeration and opening a handle have synchronous metadata calls.
+
+## Prepared controller families
+
+The MIT RIGStats AuraUsb source at commit2e9c9caa7512360b858dc22696b1f0aea1d653b9 identifies five motherboard controller PIDs18F3/1939/19AF/1AA6/1BED and four older addressable controller PIDs1867/1872/18A3/18A5. Both require actual VID0B05, usage pageFF72 and adequate HID report lengths; an unknown device is not added merely because its name contains ASUS/ROG/TUF.
+
+Motherboard family keeps the existing EC35 effect + EC36 mask/RGB packet flow. Addressable family uses EC3B/channel/0/mode/R/G/B, one report per reported logical header. Its header configuration count is read from the same verified table offset2; the motherboard-only onboard count at0x1B is ignored for this family. All packet preparation completes before the first hardware write. The worker conservatively refuses more than8 headers; that is an implementation boundary, not a claimed hardware LED limit.
+
+Descriptors add `controllerFamily:motherboard|addressable`, `physicalStripLedCountReadable:false`, `generationReadable:false` and `generationWritable:false`. A logical addressable channel remains one logical unit, not a measured strip LED count. EC82/ECB0 does not establish Gen1/Gen2, connected-strip occupancy or the original motherboard ARGB count/rescan API. No generation/flash packet was added.
+
+The four additional PIDs are protocol-prepared from the fixed MIT source and synthetic fixtures; no corresponding physical device or hardware effect has been tested on this machine. They do not imply universal notebook/handheld/GPU/DRAM support or full Aura Sync. The existing exact VID/PID/report checks and scan-local identity requirements remain in force.
 
 ## Requests and replies
 
@@ -37,9 +47,11 @@ Compile from the repository root with Windows PowerShell:
 Result on 2026-10-13:
 
 ```text
-Direct Aura protocol tests passed: 33; hardware writes performed: 0; HID devices opened: 0
+Direct Aura protocol tests passed: 57; hardware writes performed: 0; HID devices opened: 0
 ```
 
 The injected `IAuraIoApi` checks immediate and pending completion, report copies, completion-length validation, failures before an operation starts, aborted and delayed cancellation, completion races, incomplete operations preserving native memory, rejection after poisoning, depleted budgets and the cross-worker ownership key convention. No synthetic check opens a HID interface or sends a device report. `ResetForSyntheticTests` and the fake API are only used by `--self-test`; no JSON operation exposes them.
 
 Root's supervised single read-only regression passed first scan, release, rescan, followed by fan and LCD queries. It did not hit the former 15 s scan hang. No actual lighting effect was applied during this change.
+
+Additional family fixtures check all nine source PIDs, foreign-device PIDs, addressable zone ordering, mode/channel/RGB packet offsets, duplicate/invalid channels, unproven mode refusal and conservative table bounds. These tests never open HID devices or send reports.

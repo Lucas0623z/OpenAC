@@ -22,8 +22,6 @@ namespace RogControl {
    var left=new StackPanel();var right=new StackPanel();Grid.SetColumn(right,2);body.Children.Add(left);body.Children.Add(right);
    left.Children.Add(OriginalMachineShowcase());left.Children.Add(OriginalAiOverclock());left.Children.Add(OriginalDevicesShowcase());
    right.Children.Add(OriginalMonitoring());right.Children.Add(OriginalFanModes());content.Children.Add(body);
-   string nativeStatus=devices.Any(d=>d.id!=null&&d.id.StartsWith("native-aura-",StringComparison.Ordinal))?"神光同步：原生 USB 已连接":"神光同步：等待扫描";
-   var footer=Label(nativeStatus+"    ·    监控数据只显示已读回的值",11,muted);footer.Margin=new Thickness(2,10,0,0);content.Children.Add(footer);
   }
 
   Border OriginalMachineShowcase() {
@@ -40,7 +38,7 @@ namespace RogControl {
   StackPanel OriginalAiOverclock() {
    var ai=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,0,0,23)};
    var title=Label("AI 超频",14,text);title.Margin=new Thickness(0);title.VerticalAlignment=VerticalAlignment.Center;ai.Children.Add(title);
-   ai.Children.Add(new CheckBox{Content="未接通",Foreground=muted,IsEnabled=false,IsChecked=false,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(17,0,0,0)});return ai;
+   ai.Children.Add(new CheckBox{Foreground=muted,IsEnabled=false,IsChecked=false,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(17,0,0,0)});return ai;
   }
 
   void OriginalSpec(Grid grid,int row,string name,string value) {
@@ -116,7 +114,7 @@ namespace RogControl {
 
   Border OriginalFanModes() {
    var stack=new StackPanel();var heading=new Grid();heading.ColumnDefinitions.Add(new ColumnDefinition());heading.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
-   var title=Label("风扇模式",17,text,FontWeights.SemiBold);title.Margin=new Thickness(0);heading.Children.Add(title);var state=Label("未接通",11,muted);state.Margin=new Thickness(0);state.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(state,1);heading.Children.Add(state);stack.Children.Add(heading);
+   var title=Label("风扇模式",17,text,FontWeights.SemiBold);title.Margin=new Thickness(0);heading.Children.Add(title);stack.Children.Add(heading);
    var modes=new Grid{Margin=new Thickness(0,17,0,0)};for(int i=0;i<5;i++)modes.ColumnDefinitions.Add(new ColumnDefinition());
    string[] names={"安静","标准","加速","全速","自定义"};
    string[] iconNames={"OSD_Silent.png","OSD_Standard.png","OSD_Turbo.png","OSD_FullSpeed.png"};
@@ -200,7 +198,7 @@ namespace RogControl {
      RenderOptions.SetBitmapScalingMode(image,BitmapScalingMode.HighQuality);slot.Child=image;return slot;
     }catch{}
    }
-   var message=Label("设备图片",11,muted);message.HorizontalAlignment=HorizontalAlignment.Center;message.VerticalAlignment=VerticalAlignment.Center;message.Margin=new Thickness(0);slot.Child=message;return slot;
+   return slot;
   }
 
   BitmapSource OriginalTransparentBounds(BitmapSource source) {

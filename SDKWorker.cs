@@ -209,9 +209,14 @@ internal static class SDKWorker
         if(limits.RpmMax<=limits.RpmMin||limits.DutyMax<limits.DutyMin) throw new Exception("Port has no valid calibrated fan range");
         FanLimits[port]=limits; return limits;
     }
-    static object LcdPresets() {
+    static bool KnownLcd(string id) { return id=="7124"||id=="7299"||id=="7571"; }
+    static string LcdName(string id) { return id=="7124"?"ROG MAXIMUS Z890 EXTREME LCD":id=="7571"?"ROG CROSSHAIR X870E EXTREME GLACIAL LCD":"ROG CROSSHAIR X870E EXTREME LCD"; }
+    static object LcdPresets(string id="7299") {
         var list=new List<object>();
-        for(int n=0;n<8;n++) list.Add(Obj("presetId",n,"fileName",n<2?"x870_launch"+(n+1)+".gif":"x870_"+(n-1).ToString("00",CultureInfo.InvariantCulture)+".png","preloadFileType",n<2?"gif":"jpg","type",n<2?2:0,"source",1,"index",n<2?n:n-2,"visualIdentityConfirmed",false));
+        for(int n=0;n<8;n++) {
+            string file=id=="7124"?(n<2?"ex_5_launch"+(n+1)+".gif":"ex_5_rog"+(n-1)+".png"):id=="7571"?(n<2?"x870e_glacial_launch_"+(n+1)+".gif":"x870e_glacial_img_"+(n-1)+".png"):(n<2?"x870_launch"+(n+1)+".gif":"x870_"+(n-1).ToString("00",CultureInfo.InvariantCulture)+".png");
+            list.Add(Obj("presetId",n,"fileName",file,"preloadFileType",n<2?"gif":"jpg","type",n<2?2:0,"source",1,"index",n<2?n:n-2,"visualIdentityConfirmed",false));
+        }
         return list;
     }
     static List<object> SensorSnapshots() {
@@ -230,7 +235,7 @@ internal static class SDKWorker
     }
     static object ReadSensors(Dictionary<string,object> request) {
         if(Kind!="lcd") throw new WorkerError("INVALID_REQUEST","sensors is available only in the LCD worker");
-        Fields(request,"sensorIds");string id=StrictString(request,"deviceId");if(id!="7299") throw new WorkerError("INVALID_REQUEST","Unsupported LCD device");
+        Fields(request,"sensorIds");string id=StrictString(request,"deviceId");if(!KnownLcd(id)) throw new WorkerError("INVALID_REQUEST","Unsupported LCD device");
         var selected=SelectedSensors(request,5);
         if(!Serial.ContainsKey(id)) throw new WorkerError("DEVICE_NOT_SCANNED","Scan before querying sensors");
         if(!Alive.Contains(id)) throw new WorkerError("READBACK_REQUIRED","Read and confirm the LCD device before querying sensors");
@@ -258,6 +263,19 @@ internal static class SDKWorker
         int value=request.ContainsKey("durationSeconds")?StrictInt(request,"durationSeconds",5,60):5;
         if(value!=5&&value!=10&&value!=20&&value!=30&&value!=60) throw new WorkerError("INVALID_REQUEST","durationSeconds must be 5, 10, 20, 30 or 60");
         return value;
+    }
+    static object MediaStatus(Dictionary<string,object> request) {
+        if(Kind!="lcd") throw new WorkerError("INVALID_REQUEST","media is only available for the LCD worker");
+        foreach(string key in request.Keys) if(key!="id"&&key!="op"&&key!="kind"&&key!="deviceId") throw new WorkerError("INVALID_REQUEST","Unknown field "+key);
+        string id=StrictString(request,"deviceId");if(!KnownLcd(id)) throw new WorkerError("INVALID_REQUEST","Unsupported LCD device");
+        if(!Serial.ContainsKey(id)) throw new WorkerError("DEVICE_NOT_SCANNED","Scan before querying media status");
+        if(!Alive.Contains(id)) throw new WorkerError("READBACK_REQUIRED","Read and confirm the LCD device before querying media status");
+        long free;string raw=RequestText(Query("5",id,"26","")).Trim().Trim('\0');
+        if(!long.TryParse(raw,NumberStyles.None,CultureInfo.InvariantCulture,out free)||free<0||free>Int32.MaxValue) throw new WorkerError("SDK_QUERY_FAILED","LCD free-space query did not return a valid KiB value");
+        var profile=Request(Query("5",id,"1",""));
+        var setting=profile.SelectSingleNode("/profiles/profile4/main/single/player[@key='multi_media_player']/setting");
+        var groups=new List<object>();if(setting!=null) foreach(XmlNode group in setting.SelectNodes("group")) groups.Add(Flat(group));
+        return Obj("deviceId",id,"freeSpaceKiB",free,"freeSpaceReadbackConfirmed",true,"spaceUnitSource","installedSdkSizeConversion","slotMin",0,"slotMax",31,"slotOccupancyReadable",false,"slots",null,"currentMediaGroups",groups,"profileReadbackConfirmed",setting!=null,"visualIdentityConfirmed",false,"userUploadFormats",new[]{"jpg"},"animationUploadSupported",false,"animationUploadReason","Current motherboard LCD source allows custom JPEG only; generic AIO GIF/video conversion is not this model's upload capability");
     }
     static string MediaBody(int type,int source,int index,int duration,string extra) {
         return "<profiles><profile4><main><single><player key=\"multi_media_player\"><setting><play_device>AIO2_PANEL</play_device><display_time>"+(duration*1000)+"</display_time><group key=\"0\"><type>"+type+"</type><source>"+source+"</source><index_format>"+index+"</index_format>"+extra+"</group></setting></player></single></main></profile4></profiles>";
@@ -369,7 +387,7 @@ internal static class SDKWorker
     static Dictionary<string,object> Set(Dictionary<string,object> request) {
         // All caller-provided fields are validated before Scan/Init/Request/native I/O.
         string id=StrictString(request,"deviceId"),setting=StrictString(request,"setting");
-        if(Kind=="fan" && id!="7576" || Kind=="lcd" && id!="7299") throw new WorkerError("INVALID_REQUEST","Device ID is not supported by this isolated worker");
+        if(Kind=="fan" && id!="7576" || Kind=="lcd" && !KnownLcd(id)) throw new WorkerError("INVALID_REQUEST","Device ID is not supported by this isolated worker");
         string body=null,function=null,port=null; object requested=null;
         bool power=false; int brightness=0,mediaType=-1,mediaSource=-1,mediaIndex=-1,duration=5,uploadSlot=-1;
         string mediaExtra="",uploadPath=null;
@@ -474,13 +492,20 @@ internal static class SDKWorker
                     mediaType=preset<2?2:0;mediaSource=1;mediaIndex=preset<2?preset:preset-2;body=MediaBody(mediaType,mediaSource,mediaIndex,duration,"");break;
                 case "uploadImage":
                     Fields(request,"filePath","slot","durationSeconds");uploadSlot=StrictInt(request,"slot",0,31);duration=Duration(request);uploadPath=LocalJpegPath(StrictString(request,"filePath"));break;
+                case "selectMedia":
+                    Fields(request,"slot","durationSeconds");mediaIndex=StrictInt(request,"slot",0,31);duration=Duration(request);mediaType=0;mediaSource=0;function="2";
+                    requested=Obj("slot",mediaIndex,"mediaFormat","jpg","durationSeconds",duration);body=MediaBody(mediaType,mediaSource,mediaIndex,duration,"");break;
+                case "deleteMedia":
+                    Fields(request,"slot","confirmSlotDeletion");int deleteSlot=StrictInt(request,"slot",0,31);
+                    if(!StrictBool(request,"confirmSlotDeletion")) throw new WorkerError("INVALID_REQUEST","Deleting this exact user JPEG slot requires confirmSlotDeletion:true");
+                    function="29";requested=Obj("slot",deleteSlot,"mediaFormat","jpg","confirmSlotDeletion",true);body="<settings><media_delete><type>0</type><index>"+deleteSlot+"</index></media_delete></settings>";break;
                 case "hardwareMonitor":
                     Fields(request,"backgroundId","sensorIds","durationSeconds");int background=StrictInt(request,"backgroundId",8,11);duration=Duration(request);
                     var sensors=SelectedSensors(request,background==11?5:3);var sensorXml=new StringBuilder();
                     for(int n=0;n<sensors.Count;n++) { var sensor=sensors[n];sensorXml.Append("<sensor key=\"").Append(n).Append("\"><id>").Append(Escape(sensor.NativeId)).Append("</id><name>").Append(Escape(sensor.Name)).Append("</name><default_name>").Append(Escape(sensor.DefaultName)).Append("</default_name><type>").Append(sensor.NativeType).Append("</type></sensor>"); }
                     mediaType=5;mediaSource=1;mediaIndex=background-8;function="2";mediaExtra="<bg_type>1</bg_type><text_settings><title><font>1</font><color><red>255</red><green>0</green><blue>80</blue></color></title><value><font>0</font><color><red>255</red><green>255</green><blue>255</blue></color></value></text_settings><sensor_list>"+sensorXml+"</sensor_list>";
                     body=MediaBody(mediaType,mediaSource,mediaIndex,duration,mediaExtra);requested=Obj("backgroundId",background,"sensorIds",request["sensorIds"],"durationSeconds",duration);break;
-                default:throw new WorkerError("UNSUPPORTED_SETTING","Supported LCD settings are powerS0, powerS5, brightness, standby, presetId, uploadImage and hardwareMonitor");
+                default:throw new WorkerError("UNSUPPORTED_SETTING","Supported LCD settings are powerS0, powerS5, brightness, standby, presetId, uploadImage, selectMedia, deleteMedia and hardwareMonitor");
             }
         } else throw new WorkerError("UNSUPPORTED_SETTING","Peripheral writes remain unsupported");
         if(!Serial.ContainsKey(id)) throw new WorkerError("DEVICE_NOT_SCANNED","Scan and confirm the device in this worker before writing");
@@ -534,18 +559,22 @@ internal static class SDKWorker
                 result["appliedState"]=actual==power?"verified":"mismatch";
                 if(actual!=power) result["verificationWarning"]="Power readback differs from the requested value; no retry or rollback was attempted";
             } catch(Exception ex) { result["verificationWarning"]="Write completed but readback failed: "+ex.Message; }
+        } else if(Kind=="lcd" && setting=="deleteMedia") {
+            result["slot"]=((Dictionary<string,object>)requested)["slot"];result["mediaFormat"]="jpg";result["deletionReadbackConfirmed"]=false;result["slotOccupancyReadable"]=false;result["appliedState"]=(bool)result["hardwareAcknowledged"]?"deletionAcknowledged":"unconfirmed";
+            result["verificationWarning"]="Only the deletion command acknowledgement is available; the device has no proven uploaded-slot inventory getter";
         } else if(Kind=="lcd" && mediaType>=0) {
             VerifyMedia(result,id,mediaType,mediaSource,mediaIndex,duration,mediaExtra);
         }
         return result;
     }
-    static Dictionary<string,object> Scan() {
+    static Dictionary<string,object> Scan(string requestedLcd="7299") {
+        if(Kind=="lcd"&&!KnownLcd(requestedLcd)) throw new WorkerError("INVALID_REQUEST","LCD model is not on the source-confirmed family list");
         Serial.Clear(); Names.Clear(); FanLimits.Clear(); Alive.Clear();ActiveFanPorts.Clear();LcdSensors.Clear();FanEffects.Clear();FanSources.Clear();FanFirmware=null;
         var list=new List<object>();
         if(Kind=="lcd") {
-            var doc=Request(Query("5","7299","0",""));
-            if(doc.SelectSingleNode("/root/capability/device_list[deviceid='7299']")!=null) {
-                Serial["7299"]=""; Names["7299"]="ROG CROSSHAIR X870E EXTREME LCD";
+            var doc=Request(Query("5",requestedLcd,"0",""));
+            if(doc.SelectSingleNode("/root/capability/device_list[deviceid='"+requestedLcd+"']")!=null) {
+                Serial[requestedLcd]=""; Names[requestedLcd]=LcdName(requestedLcd);
                 int n=0;
                 foreach(XmlNode node in doc.SelectNodes("/root/capability/player[@key='hw_monitor_player']/sensor_list/sensor")) {
                     int type;string nativeId=node.Attributes["key"]==null?null:node.Attributes["key"].Value;string name=Text(node,"name"),defaultName=Text(node,"default_name");
@@ -556,7 +585,7 @@ internal static class SDKWorker
                     if(type!=0&&type!=1&&type!=2&&type!=4&&type!=5) continue;
                     string opaque="sensor-"+(n++);LcdSensors[opaque]=new SensorCapability {Id=opaque,NativeId=nativeId,Name=name,DefaultName=defaultName,NativeType=type};
                 }
-                list.Add(Obj("deviceId","7299","name",Names["7299"],"connection","USB","displayWidth",720,"displayHeight",1280,"supportsWrite",true,"supportedSettings",new[]{"powerS0","powerS5","brightness","standby","presetId","uploadImage","hardwareMonitor"},"writeRequiresReadback",true,"presetAssets",LcdPresets(),"hardwareSensors",SensorSnapshots(),"hardwareMonitorWritable",LcdSensors.Count>0));
+                list.Add(Obj("deviceId",requestedLcd,"name",Names[requestedLcd],"connection","USB","displayWidth",720,"displayHeight",1280,"supportsWrite",true,"supportedSettings",new[]{"powerS0","powerS5","brightness","standby","presetId","uploadImage","selectMedia","deleteMedia","hardwareMonitor"},"writeRequiresReadback",true,"presetAssets",LcdPresets(requestedLcd),"hardwareSensors",SensorSnapshots(),"hardwareMonitorWritable",LcdSensors.Count>0,"family","motherboardLcd51","sourcePrepared",true,"hardwareWriteValidated",false));
             }
         } else if(Kind=="fan") {
             var doc=Request(Query("32","7576","1",""));
@@ -580,7 +609,7 @@ internal static class SDKWorker
         return Obj("devices",list,"startStatus",StartStatus);
     }
     static Dictionary<string,object> Read(string id) {
-        if(!Serial.ContainsKey(id)) Scan();
+        if(!Serial.ContainsKey(id)) Scan(Kind=="lcd"?id:"7299");
         if(!Serial.ContainsKey(id)) throw new Exception("Device is absent from SDK scan");
         Alive.Remove(id);
         var data=Obj("deviceId",id,"name",Names[id],"supportsWrite",false);
@@ -588,16 +617,19 @@ internal static class SDKWorker
         if(Kind=="lcd") {
             string firmware=RequestText(Query("5",id,"5","")).Trim();
             bool confirmed=firmware.Length==4 && firmware!="0000";
+            foreach(char digit in firmware) if(!((digit>='0'&&digit<='9')||(digit>='a'&&digit<='f')||(digit>='A'&&digit<='F'))) confirmed=false;
             data["firmware"]=confirmed?firmware:null;
             data["displayWidth"]=720; data["displayHeight"]=1280;
             data["readbackConfirmed"]=confirmed;
             data["deviceAlive"]=confirmed; data["placeholder"]=!confirmed;
             if(confirmed) Alive.Add(id);
-            data["supportsWrite"]=confirmed;data["supportedSettings"]=new[]{"powerS0","powerS5","brightness","standby","presetId","uploadImage","hardwareMonitor"};
+            data["supportsWrite"]=confirmed;data["supportedSettings"]=new[]{"powerS0","powerS5","brightness","standby","presetId","uploadImage","selectMedia","deleteMedia","hardwareMonitor"};
             data["brightness"]=null; data["brightnessMin"]=10; data["brightnessMax"]=100;data["brightnessStep"]=10;
             data["brightnessReadable"]=false; data["brightnessWritable"]=confirmed;data["brightnessRangeSource"]="installedViewSlider";
             data["standbyEnabled"]=null; data["standbyReadable"]=false;data["standbyWritable"]=confirmed;
-            data["presetWritable"]=confirmed;data["presetAssets"]=LcdPresets();data["contentPresets"]=LcdPresets();data["imageUploadWritable"]=confirmed;data["uploadSlotMin"]=0;data["uploadSlotMax"]=31;data["uploadSlotOccupancyReadable"]=false;
+            data["presetWritable"]=confirmed;data["presetAssets"]=LcdPresets(id);data["contentPresets"]=LcdPresets(id);data["imageUploadWritable"]=confirmed;data["uploadSlotMin"]=0;data["uploadSlotMax"]=31;data["uploadSlotOccupancyReadable"]=false;
+            data["family"]="motherboardLcd51";data["sourcePrepared"]=true;data["hardwareWriteValidated"]=false;
+            data["mediaSelectWritable"]=confirmed;data["mediaDeleteWritable"]=confirmed;data["userUploadFormats"]=new[]{"jpg"};data["animationUploadSupported"]=false;data["animationUploadReason"]="The source-confirmed motherboard LCD51 family permits custom JPEG only";
             data["hardwareSensors"]=SensorSnapshots();data["hardwareMonitorWritable"]=confirmed&&LcdSensors.Count>0;data["hardwareMonitorBackgrounds"]=new[]{Obj("backgroundId",8,"index",0,"maxSensors",3),Obj("backgroundId",9,"index",1,"maxSensors",3),Obj("backgroundId",10,"index",2,"maxSensors",3),Obj("backgroundId",11,"index",3,"maxSensors",5)};
             data["powerS0"]=null; data["powerS5"]=null;
             // GET_PROFILE is the only verified profile getter. Its current response lacks
@@ -690,10 +722,13 @@ internal static class SDKWorker
             if(Str(request,"kind",Kind)!=Kind) throw new WorkerError("INVALID_REQUEST","Request kind differs from isolated worker kind");
             object result;
             switch(op) {
-                case "scan": result=Scan(); break;
+                case "scan":
+                    foreach(string key in request.Keys) if(key!="id"&&key!="op"&&key!="kind"&&!(Kind=="lcd"&&key=="deviceId"))throw new WorkerError("INVALID_REQUEST","Unknown scan field "+key);
+                    result=Scan(Kind=="lcd"&&request.ContainsKey("deviceId")?StrictString(request,"deviceId"):"7299"); break;
                 case "read": result=Read(Str(request,"deviceId","")); break;
                 case "set": result=Set(request);break;
                 case "sensors": result=ReadSensors(request);break;
+                case "media": result=MediaStatus(request);break;
                 default: throw new WorkerError("INVALID_REQUEST","Operation is not on allowlist");
             }
             return Json.Serialize(Obj("id",id,"ok",true,"kind",Kind,"op",op,"data",result));

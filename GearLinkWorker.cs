@@ -19,6 +19,26 @@ internal static partial class GearLinkWorker
     internal static Dictionary<string, object> Obj(params object[] fields) { var o = new Dictionary<string, object>(); for (int i=0;i<fields.Length;i+=2) o[(string)fields[i]]=fields[i+1]; return o; }
     internal static string Text(Dictionary<string,object> r, string key) { object v; return r.TryGetValue(key,out v) && v != null ? Convert.ToString(v) : ""; }
     internal static string Kind(int pid) { return pid == 7546 || pid == 7548 ? "mouse" : pid == 7586 || pid == 7588 ? "keyboard" : pid == 7489 ? "headset" : pid == 6862 || pid == 6864 || pid == 7508 ? "omni" : "unknown"; }
+    internal static bool LegacyKeyboard(int pid) { return pid==7586||pid==7588; }
+    internal static int ResponsePrefixLength(int pid,byte[] packet) { Require(packet,4);return packet[0]==0xA0||LegacyKeyboard(pid)?2:4; }
+    internal static bool ResponseMatches(int pid,byte report,byte[] packet,byte[] input,int received)
+    {
+        int match=ResponsePrefixLength(pid,packet);if(input==null||received<match+1||received>input.Length||input[0]!=report)return false;
+        for(int i=0;i<match;i++)if(input[i+1]!=packet[i])return false;return true;
+    }
+    internal static bool DeviceErrorResponse(byte report,byte[] input,int received) { return input!=null&&received>=3&&received<=input.Length&&input[0]==report&&input[1]==255&&input[2]==170; }
+    internal sealed class SettingReceipt { internal bool OutputCompleted,Acknowledged,Rejected;internal string Warning; }
+    internal static SettingReceipt SendSettingAndAwaitResponse(int pid,byte report,byte[] packet,int outputLength,int inputLength,Func<bool,byte[],int,int> transfer)
+    {
+        if(packet==null||packet.Length<4||outputLength<packet.Length+1||inputLength<5)throw new IOException("Unexpected setting report length.");
+        var receipt=new SettingReceipt();var output=new byte[outputLength];output[0]=report;Array.Copy(packet,0,output,1,packet.Length);var clock=Stopwatch.StartNew();
+        try {
+            int sent=transfer(true,output,900);if(sent!=output.Length){receipt.Warning="Setting output returned a partial report; its hardware effect is unknown.";return receipt;}receipt.OutputCompleted=true;
+            for(int reads=0;reads<64;reads++) {int remaining=900-(int)clock.ElapsedMilliseconds;if(remaining<=GearBoundedIo.CancelReserveMs)throw new TimeoutException("Setting acknowledgement exceeded its bounded transaction budget.");var input=new byte[inputLength];int got=transfer(false,input,remaining);if(got==0)throw new IOException("Device disconnected while awaiting setting acknowledgement.");if(DeviceErrorResponse(report,input,got)){receipt.Rejected=true;receipt.Warning="Device rejected the setting with an FF AA error frame.";return receipt;}if(ResponseMatches(pid,report,packet,input,got)){receipt.Acknowledged=true;return receipt;}}
+            receipt.Warning="No matching acknowledgement in the bounded response stream.";
+        } catch(TimeoutException e) {receipt.Warning="Setting output completed but acknowledgement was not confirmed. "+e.Message;}catch(IOException e){receipt.Warning="Setting acknowledgement was not confirmed. "+e.Message;}
+        return receipt;
+    }
     internal static string Model(string kind) { return kind=="mouse"?"ROG HARPE II EXTREME EDITION20":kind=="keyboard"?"ROG AZOTH EXTREME EDITION20":kind=="headset"?"ROG DELTA II-KJP":"ROG OMNI / Polling Rate Booster"; }
     internal static string Transport(int pid) { return pid==7546||pid==7586?"usb":pid==7548||pid==7588||pid==7489?"rf":"unknown"; }
     private static void Main(string[] args)
@@ -52,10 +72,11 @@ internal static partial class GearLinkWorker
             byte[] packet=kind=="headset"?BuildHeadsetSetting(setting,value,(Dictionary<string,object>)before["snapshot"]):BuildPeripheralSetting(kind,setting,value,(Dictionary<string,object>)before["snapshot"]);
             if(MatchesSetting(setting,value,(Dictionary<string,object>)before["snapshot"])) {before["setting"]=setting;before["requestedValue"]=value;before["accepted"]=false;before["writeAttempted"]=false;before["writeConfirmed"]=true;before["appliedState"]="alreadySet";return before;}
             object noOp; if(req.TryGetValue("requireNoOp",out noOp)&&noOp is bool&&(bool)noOp)throw new ArgumentException("Read-only no-op validation rejected a changed value; no setting was written.");
-            using(var hid=new GearHid(target))hid.WriteSetting(target.SelectReport(kind=="headset"?(byte?)0xCC:null),packet);
+            SettingReceipt receipt;using(var hid=new GearHid(target))receipt=hid.WriteSetting(target.SelectReport(kind=="headset"?(byte?)0xCC:null),packet);
             var after=Read(target,req);after["setting"]=setting;after["requestedValue"]=value;after["accepted"]=true;after["writeAttempted"]=true;
             bool match=MatchesSetting(setting,value,(Dictionary<string,object>)after["snapshot"]);
-            after["writeConfirmed"]=(bool)after["online"]&&match;after["acceptanceEvidence"]="HID output completed; only a matching getter confirms the setting.";
+            after["accepted"]=receipt.OutputCompleted;after["settingAcknowledged"]=receipt.Acknowledged;after["settingRejected"]=receipt.Rejected;if(receipt.Warning!=null)((List<object>)after["errors"]).Add(Obj("field","settingAcknowledgement","message",receipt.Warning));
+            after["writeConfirmed"]=receipt.OutputCompleted&&!receipt.Rejected&&(bool)after["online"]&&match;after["acceptanceEvidence"]="HID output completion, matching acknowledgement, and current-value readback are separate results.";
             after["appliedState"]=(bool)after["writeConfirmed"]?"confirmed":"unconfirmed";
             return after;
         }
@@ -80,9 +101,9 @@ internal static partial class GearLinkWorker
     internal static Dictionary<string,object> Read(GearDescriptor d,Dictionary<string,object> request=null)
     {
         string kind=Kind(d.Pid); var state=d.Metadata();
-        var snapshot=Obj("batteryPercent",null,"charging",null,"sleepMinutes",null,"sleepNever",null,"eqEnabled",null,"eqGains",null,"eqRawGains",null,"pollingRate",null,"dpiStages",null,"activeDpiStage",null,"angleSnapping",null,"motionSync",null,"firmware",null,"dongleFirmware",null);
+        var snapshot=Obj("modelPid",d.Pid,"batteryPercent",null,"charging",null,"sleepMinutes",null,"sleepNever",null,"eqEnabled",null,"eqGains",null,"eqRawGains",null,"pollingRate",null,"dpiStages",null,"activeDpiStage",null,"angleSnapping",null,"motionSync",null,"firmware",null,"dongleFirmware",null);
         var errors=new List<object>(); var capabilities=new List<string>(); bool online=false, confirmed=false;
-        state["snapshot"]=snapshot;state["capabilities"]=capabilities;state["readCapabilities"]=capabilities;state["setCapabilities"]=new string[0];state["settingOptions"]=FeatureOptions(kind);state["errors"]=errors;state["readbackConfirmed"]=false;state["writeConfirmed"]=false;state["connected"]=true;state["online"]=false;
+        state["snapshot"]=snapshot;state["capabilities"]=capabilities;state["readCapabilities"]=capabilities;state["setCapabilities"]=new string[0];state["settingOptions"]=FeatureOptions(kind,d.Pid);state["errors"]=errors;state["readbackConfirmed"]=false;state["writeConfirmed"]=false;state["connected"]=true;state["online"]=false;
         if(kind=="omni") {
             try{using(var hid=new GearHid(d)){byte[] b=hid.Query(1,Packet(0xA0,0,0));Require(b,4);int count=U16(b,2);if(count>14)throw new IOException("Invalid paired device count.");Require(b,4+count*4);var pairs=new List<object>();for(int i=0;i<count;i++){int o=4+i*4,pid=U16(b,o);pairs.Add(Obj("pid",pid,"kind",Kind(pid),"model",Kind(pid)=="unknown"?"Unknown paired device":Model(Kind(pid)),"controlReportId",(int)b[o+2],"eventReportId",(int)b[o+3]));}snapshot["pairedDevices"]=pairs;state["online"]=true;state["readbackConfirmed"]=true;capabilities.Add("pairedDevices");QueryField(hid,1,Packet(0xA1,1,0),"firmware",errors,x=>{Require(x,8);snapshot["firmware"]=VersionNative4(x,4);});}}
             catch(Exception e){errors.Add(Obj("field","pairing","message",e.Message));}return state;
@@ -121,7 +142,7 @@ internal static partial class GearLinkWorker
                     QueryField(hid,report,Packet(0x12,7,0),"power",errors,b=>{Require(b,14);if(b[4]>100)throw new IOException("Invalid battery value.");snapshot["batteryPercent"]=(int)b[4];snapshot["charging"]=b[9]==1;snapshot["sleepModeCode"]=(int)b[5];int[]sleep={1,2,3,5,10};snapshot["sleepMinutes"]=b[5]<sleep.Length?(object)sleep[b[5]]:b[5]==255?(object)0:null;snapshot["sleepNever"]=b[5]==255;snapshot["lowBatteryThreshold"]=(int)b[6];snapshot["fullChargingEffectCode"]=(int)b[11];snapshot["wakeOnMotionCode"]=(int)b[12];snapshot["chargingLightingCode"]=(int)b[13];capabilities.AddRange(new[]{"battery","charging","sleepMinutes"});});
                 } else if(kind=="keyboard") {
                     QueryField(hid,report,Packet(0x12,1,0),"power",errors,b=>{Require(b,10);if(b[5]>100)throw new IOException("Invalid keyboard battery.");snapshot["batteryPercent"]=(int)b[5];snapshot["charging"]=b[8]==1;int[]sleep={1,2,3,5,10};snapshot["sleepModeCode"]=(int)b[6];snapshot["sleepMinutes"]=b[6]<sleep.Length?(object)sleep[b[6]]:b[6]==255?(object)0:null;snapshot["sleepNever"]=b[6]==255;snapshot["powerSavingModeCode"]=(int)b[7];snapshot["lowBatteryThreshold"]=(int)b[9];capabilities.AddRange(new[]{"battery","charging","sleepMinutes"});});
-                    QueryField(hid,report,Packet(0x12,21,0),"pollingRate",errors,b=>{Require(b,5);int[]rates={1000,2000,4000,8000};if(b[4]>=rates.Length)throw new IOException("Unknown keyboard polling rate.");snapshot["pollingRateCode"]=(int)b[4];snapshot["pollingRate"]=rates[b[4]];capabilities.Add("pollingRate");});
+                    QueryField(hid,report,Packet(0x12,21,0),"pollingRate",errors,b=>{Require(b,5);int[]rates={1000,2000,4000,8000};if(b[4]>=rates.Length)throw new IOException("Unknown keyboard polling rate.");snapshot["pollingRateCode"]=(int)b[4];snapshot["pollingRateRaw"]=rates[b[4]];if(!KeyboardPollingRates(d.Pid).Contains(rates[b[4]]))throw new IOException("Polling rate is outside the verified options for this keyboard model.");snapshot["pollingRate"]=rates[b[4]];capabilities.Add("pollingRate");});
                 }
                 if(kind=="mouse"||kind=="keyboard")ReadFeatures(hid,d,report,kind,request,snapshot,capabilities,errors);
             }
@@ -141,7 +162,7 @@ internal static partial class GearLinkWorker
     internal static byte[] BuildPeripheralSetting(string kind,string setting,object value,Dictionary<string,object> before)
     {
         byte[] feature=BuildFeatureSetting(kind,setting,value,before);if(feature!=null)return feature;
-        if(setting=="pollingRate"){int rate=Integer(value,125,8000);int[]rates=kind=="keyboard"?new int[]{1000,2000,4000,8000}:new int[]{125,250,500,1000,2000,4000,8000};int code=Array.IndexOf(rates,rate);if(code<0)throw new ArgumentException("Unsupported polling rate.");object sync;if(kind=="mouse"&&rate==8000&&before.TryGetValue("motionSync",out sync)&&sync is bool&&(bool)sync)throw new ArgumentException("Disable Motion Sync before selecting 8000 Hz.");return Packet(0x51,49,kind=="keyboard"?(ushort)0:(ushort)4,(byte)code,0);}
+        if(setting=="pollingRate"){int rate=Integer(value,125,8000);int[]rates=kind=="keyboard"?new int[]{1000,2000,4000,8000}:new int[]{125,250,500,1000,2000,4000,8000};int code=Array.IndexOf(rates,rate);if(code<0)throw new ArgumentException("Unsupported polling rate.");if(kind=="keyboard"){object model;if(!before.TryGetValue("modelPid",out model)||!(model is int)||!KeyboardPollingRates((int)model).Contains(rate))throw new ArgumentException("Polling rate is not a verified option for the current keyboard model.");}object sync;if(kind=="mouse"&&rate==8000&&before.TryGetValue("motionSync",out sync)&&sync is bool&&(bool)sync)throw new ArgumentException("Disable Motion Sync before selecting 8000 Hz.");return Packet(0x51,49,kind=="keyboard"?(ushort)0:(ushort)4,(byte)code,0);}
         if(setting=="sleepMinutes"){int minutes=Integer(value,0,10);int[]sleep={1,2,3,5,10};int code=minutes==0?255:Array.IndexOf(sleep,minutes);if(code<0)throw new ArgumentException("Allowed sleep minutes: 0, 1, 2, 3, 5, 10.");if(kind=="keyboard")return Packet(0x51,56,0,(byte)code);return Packet(0x51,55,0,(byte)code,0,(byte)(int)before["lowBatteryThreshold"],0,(byte)(int)before["fullChargingEffectCode"],(byte)(int)before["wakeOnMotionCode"],(byte)(int)before["chargingLightingCode"]);}
         if(kind!="mouse")throw new ArgumentException("Unsupported keyboard setting.");
         if(setting=="angleSnapping"||setting=="motionSync"){if(!(value is bool))throw new ArgumentException("Switch must be boolean.");if(setting=="motionSync"&&(bool)value&&(int)before["pollingRate"]==8000)throw new ArgumentException("Motion Sync is unavailable at 8000 Hz.");return Packet(0x51,49,setting=="angleSnapping"?(ushort)6:(ushort)18,(byte)((bool)value?1:0));}
@@ -198,7 +219,7 @@ internal static partial class GearLinkWorker
     internal static void PeripheralSelfTest()
     {
         int tests=0;Action<bool> check=v=>{if(!v)throw new Exception("Synthetic peripheral packet test failed.");tests++;};
-        var before=Obj("dpiColors",new int[][]{new int[]{1,2,3},new int[]{10,20,30},new int[]{40,50,60},new int[]{70,80,90}},"dpiStageCount",4,"motionSync",false,"pollingRate",1000,"lowBatteryThreshold",20,"fullChargingEffectCode",1,"wakeOnMotionCode",1,"chargingLightingCode",255);
+        var before=Obj("modelPid",7588,"dpiColors",new int[][]{new int[]{1,2,3},new int[]{10,20,30},new int[]{40,50,60},new int[]{70,80,90}},"dpiStageCount",4,"motionSync",false,"pollingRate",1000,"lowBatteryThreshold",20,"fullChargingEffectCode",1,"wakeOnMotionCode",1,"chargingLightingCode",255);
         check(BuildPeripheralSetting("mouse","dpiStage",Obj("index",1,"dpi",1600),before).SequenceEqual(new byte[]{81,49,13,0,63,6,63,6,10,20,30}));
         check(BuildPeripheralSetting("mouse","pollingRate",8000,before).SequenceEqual(new byte[]{81,49,4,0,6,0}));
         check(BuildPeripheralSetting("keyboard","pollingRate",8000,before).SequenceEqual(new byte[]{81,49,0,0,3,0}));
@@ -231,25 +252,23 @@ internal sealed class GearHid : IDisposable
         if(packet[0]!=0x12&&packet[0]!=0x7D&&!GearLinkWorker.IsFeatureQuery(GearLinkWorker.Kind(descriptor.Pid),packet)&&!(packet[0]==0x41&&packet[1]==32&&packet[2]==0&&packet[3]==0)&&!(packet[0]==0xA0&&packet[1]==0&&packet[2]==0&&packet[3]==0)&&!(packet[0]==0xA1&&packet[1]==1&&packet[2]==0&&packet[3]==0))throw new ArgumentException("Read-only transport rejected a nonquery command.");
         if(descriptor.OutputLength<packet.Length+1||descriptor.InputLength<5)throw new IOException("Unexpected report length.");
         // Do not flush a shared HID queue: an original ASUS app may be waiting on it.
-        byte[] output=new byte[descriptor.OutputLength];output[0]=report;Array.Copy(packet,0,output,1,packet.Length);Stopwatch deadline=Stopwatch.StartNew();
+        byte[] output=new byte[descriptor.OutputLength];output[0]=report;Array.Copy(packet,0,output,1,packet.Length);Stopwatch deadline=Stopwatch.StartNew();var observedHeaders=new List<string>();bool trace=Environment.GetEnvironmentVariable("OPENAC_PROTOCOL_TRACE")=="1";
         try {
                 int sent=Transfer(true,output,Remaining(deadline,900));if(sent!=output.Length)throw new IOException("Device query output returned a partial report.");
-                while(true) {byte[] b=new byte[descriptor.InputLength];int got=Transfer(false,b,Remaining(deadline,900));if(got==0)throw new IOException("Device disconnected.");if(b[0]!=report)continue;
-                    if(got>=7&&b[1]==255&&b[2]==170&&b[3]==packet[0]&&b[4]==packet[1]&&b[5]==packet[2]&&b[6]==packet[3])throw new IOException("Device rejected this query.");
-                    int match=packet[0]==0xA0?2:4;
-                    if(got>=5&&Enumerable.Range(0,match).All(i=>b[i+1]==packet[i])) {if(got>=7&&b[5]==255&&b[6]==170)throw new IOException("Legacy device rejected this query.");return b.Skip(1).Take(got-1).ToArray();}
+                while(true) {byte[] b=new byte[descriptor.InputLength];int got=Transfer(false,b,Remaining(deadline,900));if(got==0)throw new IOException("Device disconnected.");if(trace&&got>=3&&observedHeaders.Count<8)observedHeaders.Add(b[0].ToString("X2")+":"+b[1].ToString("X2")+":"+b[2].ToString("X2"));if(b[0]!=report)continue;
+                    if(GearLinkWorker.DeviceErrorResponse(report,b,got))throw new IOException("Device rejected this query with an FF AA error frame."+(trace?" Error frame: "+BitConverter.ToString(b.Take(Math.Min(got,9)).ToArray())+".":""));
+                    if(GearLinkWorker.ResponseMatches(descriptor.Pid,report,packet,b,got))return b.Skip(1).Take(got-1).ToArray();
                 }
-        }catch(TimeoutException e){throw new TimeoutException("Device query exceeded its bounded 900 ms budget. "+e.Message,e);}
+        }catch(TimeoutException e){throw new TimeoutException("Device query exceeded its bounded 900 ms budget. "+e.Message+(trace?" Control response header triples (report:command:key): "+(observedHeaders.Count==0?"none":String.Join(",",observedHeaders))+".":""),e);}
     }
-    internal void WriteSetting(byte report,byte[] packet)
+    internal GearLinkWorker.SettingReceipt WriteSetting(byte report,byte[] packet)
     {
         string kind=GearLinkWorker.Kind(descriptor.Pid);bool allow=kind=="headset"&&report==0xCC&&packet.Length>=5&&packet[2]==0&&packet[3]==0&&(packet[0]==0x41&&new byte[]{2,3,4,10,16,17}.Contains(packet[1])||packet[0]==0x51&&new byte[]{16,40,51,55,82}.Contains(packet[1])||packet[0]==0x61&&packet[1]==17);
         if((kind=="mouse"||kind=="keyboard")&&packet.Length>=5&&packet[0]==0x51&&packet[3]==0&&descriptor.OutputReports.Contains(report)){allow=kind=="mouse"?(packet[1]==49&&new byte[]{4,6,9,12,13,14,15,18}.Contains(packet[2])||packet[1]==55&&packet[2]==0):(packet[1]==49||packet[1]==56)&&packet[2]==0;}
         if(descriptor.OutputReports.Contains(report)&&GearLinkWorker.IsFeatureWrite(kind,packet))allow=true;
         if(!allow)throw new ArgumentException("Setting transport rejected a nonallowlisted command.");
         if(descriptor.OutputLength<packet.Length+1)throw new IOException("Unexpected output report length.");
-        byte[] output=new byte[descriptor.OutputLength];output[0]=report;Array.Copy(packet,0,output,1,packet.Length);
-        int sent=Transfer(true,output,900);if(sent!=output.Length)throw new IOException("Setting output returned a partial report; its hardware effect is unknown.");
+        return GearLinkWorker.SendSettingAndAwaitResponse(descriptor.Pid,report,packet,descriptor.OutputLength,descriptor.InputLength,(write,buffer,budget)=>Transfer(write,buffer,budget));
     }
     private static int Remaining(Stopwatch elapsed,int budget){int remaining=budget-(int)Math.Min(Int32.MaxValue,elapsed.ElapsedMilliseconds);if(remaining<=GearBoundedIo.CancelReserveMs)throw new TimeoutException("The HID transaction deadline expired.");return remaining;}
     private int Transfer(bool write,byte[] buffer,int timeoutMs){if(handle==null||handle.IsClosed||handle.IsInvalid)throw new ObjectDisposedException("GearHid");bool retained=false;try{handle.DangerousAddRef(ref retained);return GearBoundedIo.Transfer(handle.DangerousGetHandle(),write,buffer,timeoutMs,null);}finally{if(retained)handle.DangerousRelease();}}

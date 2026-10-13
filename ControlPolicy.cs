@@ -7,7 +7,7 @@ namespace RogControl {
  // Consent is deliberately session-only. Loading a profile, importing settings,
  // or reading a device never grants permission to send configuration commands.
  public sealed class HardwareControlPolicy {
-  public const string BlockedMessage="设备控制当前关闭。可在设置 → 一般设置中开启本次运行的实验性设备控制。";
+  public const string BlockedMessage="设备控制已关闭，请在更新库 → 设备控制中开启。";
   public bool Enabled { get; private set; }
   public void SetEnabled(bool enabled) { Enabled=enabled; }
   public void Demand() { if(!Enabled)throw new InvalidOperationException(BlockedMessage); }
@@ -16,7 +16,7 @@ namespace RogControl {
   readonly HardwareControlPolicy hardwareControlPolicy=new HardwareControlPolicy();
   bool HardwareWritesEnabled { get { return hardwareControlPolicy.Enabled&&!closing&&!render; } }
   bool PermitHardwareWrite() { if(HardwareWritesEnabled)return true;Log(HardwareControlPolicy.BlockedMessage);return false; }
-  bool CanApplyGear(IDictionary<string,object> state,string setting) { return HardwareWritesEnabled&&GearCanSet(state,setting); }
+  bool CanApplyGear(IDictionary<string,object> state,string setting) { return HardwareWritesEnabled&&!busy&&GearCanSet(state,setting); }
   void HardwareControlHint(StackPanel target) { if(!HardwareWritesEnabled)target.Children.Add(Paragraph(HardwareControlPolicy.BlockedMessage,11,muted)); }
   void OriginalHardwareControlSettings() {
    var controls=Box("实验性设备控制","");

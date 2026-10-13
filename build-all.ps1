@@ -15,6 +15,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Storage adapter build failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Windows audio adapter build failed.' }
 & $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'DiscoveryWorker.exe')) (Join-Path $PSScriptRoot 'DiscoveryWorker.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Read-only device discovery build failed.' }
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'NotebookWorker.exe')) (Join-Path $PSScriptRoot 'NotebookWorker.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Notebook status adapter build failed.' }
 if ($RunChecks -or $HardwareReadOnlyChecks) {
  & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'MockWorker.exe')) (Join-Path $PSScriptRoot 'MockWorker.cs')
  if ($LASTEXITCODE -ne 0) { throw 'Mock worker build failed.' }
@@ -66,6 +68,18 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Local update catalog checks build failed.' }
  & (Join-Path $PSScriptRoot 'LocalUpdateCatalogTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Local update catalog checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) ('/out:' + (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.exe')) (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'GitHub update checks build failed.' }
+ & (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'GitHub update checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /main:NotebookWorkerTests /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'NotebookWorkerTests.exe')) (Join-Path $PSScriptRoot 'NotebookWorker.cs') (Join-Path $PSScriptRoot 'NotebookWorkerTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook status checks build failed.' }
+ & (Join-Path $PSScriptRoot 'NotebookWorkerTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook status checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.exe')) (Join-Path $PSScriptRoot 'AsusDriverCatalog.cs') (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'ASUS public catalog checks build failed.' }
+ & (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'ASUS public catalog checks failed.' }
 }
 if ($HardwareReadOnlyChecks) {
  & (Join-Path $PSScriptRoot 'ReadOnlyIntegrationTests.exe')

@@ -10,6 +10,10 @@ namespace RogControl {
 
   void OriginalFanXpertPage() {
    var heading=Label("FAN XPERT 4",26,text,FontWeights.Normal);heading.Margin=new Thickness(0,0,0,22);content.Children.Add(heading);
+   // Keep the three original columns at their authored sizes. A smaller
+   // viewport scrolls the same arrangement instead of clipping its last one.
+   var fanContent=new StackPanel{MinWidth=85+200+400+18+450};
+   var horizontal=new ScrollViewer{Content=fanContent,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalContentAlignment=HorizontalAlignment.Stretch};
    var toolbar=new Grid { Margin=new Thickness(85,65,0,20) };
    toolbar.ColumnDefinitions.Add(new ColumnDefinition());toolbar.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
    var tools=new StackPanel { Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center };
@@ -25,7 +29,7 @@ namespace RogControl {
    }
    toolbar.Children.Add(tools);
    var tuning=FanPendingButton("风扇调校","风扇调校",96);tuning.Margin=new Thickness(12,0,0,0);Grid.SetColumn(tuning,1);toolbar.Children.Add(tuning);
-   content.Children.Add(toolbar);
+   fanContent.Children.Add(toolbar);
 
    var body=new Grid { Margin=new Thickness(85,80,0,0) };
    body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(200)});
@@ -49,7 +53,6 @@ namespace RogControl {
    var rpmCaption=Label("Current RPM",13,muted);rpmCaption.Margin=new Thickness(0);rpm.Children.Add(rpmCaption);
    var rpmValue=Label("—",28,accent);rpmValue.HorizontalAlignment=HorizontalAlignment.Right;rpmValue.Margin=new Thickness(0,-5,0,0);rpm.Children.Add(rpmValue);curve.Children.Add(rpm);
    curve.Children.Add(FanCoordinateGrid(300,true));
-   var state=Paragraph("当前转速、风扇曲线与控制状态尚未读取。",11,muted);state.Margin=new Thickness(0,8,0,0);curve.Children.Add(state);
    Grid.SetColumn(curve,1);body.Children.Add(curve);
 
    var details=new StackPanel { Width=450,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(18,0,0,0) };
@@ -66,12 +69,11 @@ namespace RogControl {
    for(int i=0;i<11;i++)speedTable.ColumnDefinitions.Add(new ColumnDefinition());
    speedTable.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});speedTable.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
    for(int i=0;i<11;i++){FanSpeedCell(speedTable,(i*10).ToString()+"%",0,i,true);FanSpeedCell(speedTable,"— RPM",1,i,false);}details.Children.Add(speedTable);
-   var eq=new CheckBox { Content="EQ 模式",IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,0,18),ToolTip="尚未接入风扇控制，模式状态未读取。" };ToolTipService.SetShowOnDisabled(eq,true);details.Children.Add(eq);
+   var eq=new CheckBox { Content="EQ 模式",IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,0,18),ToolTip="设置不可用" };ToolTipService.SetShowOnDisabled(eq,true);details.Children.Add(eq);
    var delays=new Grid();delays.ColumnDefinitions.Add(new ColumnDefinition());delays.ColumnDefinitions.Add(new ColumnDefinition());
    var acceleration=(FrameworkElement)FanUnknownDelay("风扇加速时间");acceleration.Margin=new Thickness(0,0,18,0);delays.Children.Add(acceleration);
    var deceleration=(FrameworkElement)FanUnknownDelay("风扇减速时间");deceleration.Margin=new Thickness(18,0,0,0);Grid.SetColumn(deceleration,1);delays.Children.Add(deceleration);details.Children.Add(delays);
-   Grid.SetColumn(details,2);body.Children.Add(details);content.Children.Add(body);
-   var note=Paragraph("风扇设置尚未接通，调校和写入暂不可用。",11,muted);note.Margin=new Thickness(285,20,0,0);content.Children.Add(note);
+   Grid.SetColumn(details,2);body.Children.Add(details);fanContent.Children.Add(body);content.Children.Add(horizontal);
   }
 
   Button FanFlatButton(string title,Action click) {
@@ -92,11 +94,11 @@ namespace RogControl {
 
   Button FanPendingButton(string title,string action,double width) {
    var button=FanFlatButton(title,()=>{});button.Width=width;button.Height=38;button.IsEnabled=false;
-   button.ToolTip=action+"尚未接通；控件与开关状态未读取。";ToolTipService.SetShowOnDisabled(button,true);return button;
+   button.ToolTip=action+" · 设置不可用";ToolTipService.SetShowOnDisabled(button,true);return button;
   }
 
   RadioButton FanPendingRadio(string title) {
-   var radio=new RadioButton { Content=title,IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,18,0),FontSize=13,ToolTip="当前模式未读取，设置写入尚未接通。" };
+   var radio=new RadioButton { Content=title,IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,18,0),FontSize=13,ToolTip="设置不可用" };
    ToolTipService.SetShowOnDisabled(radio,true);return radio;
   }
 

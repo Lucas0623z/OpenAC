@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "reviewedAt": "2026-10-13",
-  "status": "reviewed_preview_allowlist",
+  "status": "reviewed_development_branch_allowlist",
   "publicationAuthorized": true,
   "projectLicenseSelection": "MIT",
   "protocolProvenance": "recorded_implementation_sources_and_fixed_reference_review",
@@ -44,7 +44,17 @@
     "AudioEndpointWorker.cs",
     "ControlPolicy.cs",
     "installer/InstallerCore.cs",
-    "installer/Setup.cs"
+    "installer/Setup.cs",
+    "AutoDeviceRead.cs",
+    "GitHubUpdateCatalog.cs",
+    "GitHubUpdateStructure.cs",
+    "LivePreviewHost.cs",
+    "LivePreviewState.cs",
+    "UiPreferences.cs",
+    "SupportedDevicesCatalog.cs",
+    "NotebookWorker.cs",
+    "AsusDriverCatalog.cs",
+    "AsusUpdateStructure.cs"
   ],
   "buildFiles": [
     "app.manifest",
@@ -57,7 +67,8 @@
     "installer/build-installer.ps1",
     "installer/app.manifest",
     "installer/RuntimeFiles.json",
-    ".gitattributes"
+    ".gitattributes",
+    "preview.ps1"
   ],
   "testSourceFiles": [
     "MockWorker.cs",
@@ -72,7 +83,10 @@
     "LocalUpdateCatalogTests.cs",
     "DiscoveryGuiTests.cs",
     "ControlPolicyTests.cs",
-    "installer/InstallerTests.cs"
+    "installer/InstallerTests.cs",
+    "GitHubUpdateCatalogTests.cs",
+    "NotebookWorkerTests.cs",
+    "AsusDriverCatalogTests.cs"
   ],
   "documentationFiles": [
     "README.md",
@@ -92,7 +106,15 @@
     "THIRD-PARTY-NOTICES.md",
     "PROVENANCE.md",
     "Hardware-Validation.md",
-    "installer/README.md"
+    "installer/README.md",
+    "GitHubUpdate-Implementation.md",
+    "LivePreview.md",
+    "DeviceSupportCatalog.md",
+    "OriginalUiInventory.md",
+    "NotebookWorker-protocol.md",
+    "Asus-Public-Catalog.md",
+    "Peripheral-Protocol-Progress.md",
+    "OpenSourceInterfaces.md"
   ],
   "metadataFileMappings": [
     {
@@ -139,8 +161,10 @@
     "ASUS SDK still required for LCD/fan; full Aura Sync and original component updater unfinished"
   ],
   "completedChecks": [
-    "Core 765 pure checks passed; clean source-only rebuild passed",
-    "Installer 130 pure checks and embedded-payload verification passed; no real install/uninstall",
-    "Explicit package file/hash audit passed; private fixtures replaced with synthetic identities"
+    "Development core: 1119 pure checks and fresh allowlist-only source rebuild passed",
+    "UI: 40 checks and 47 page/tab states at 1538/1180 widths (94 unshown renders); catalogue 28 checks; ASUS update UI 11 checks",
+    "Live preview: state transfer, compiler-failure preservation, runtime-staging-failure preservation and page-preserving host restart tested",
+    "Public read-only requests: OpenAC GitHub releases; ASUS current board plus GA402RK and RC71L catalogues; no package execution or flash",
+    "Published installer baseline: 130 pure checks and payload verification; no real install/uninstall and no new installer release"
   ]
 }

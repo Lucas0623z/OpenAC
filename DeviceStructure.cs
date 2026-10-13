@@ -14,7 +14,7 @@ namespace RogControl {
   const string OriginalLcdAssets=@"C:\Program Files (x86)\ASUS\ArmouryDevice\View\E7C8DA76-C9B9-4297-8681-DD878330AFE7\resources\src\pages\lcd\common\images\5\img_or_anim";
 
   void OriginalMotherboardPage() {
-   var title=Label("ROG CROSSHAIR X870E EXTREME",24,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,24);content.Children.Add(title);HardwareControlHint(content);
+   var title=Label("ROG CROSSHAIR X870E EXTREME",24,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,24);content.Children.Add(title);
    var tabs=new Grid();for(int i=0;i<4;i++)tabs.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
    string[] names={"5\" LCD Display","可编程接针","磁盘信息","ASUS WiFi Q-Antenna"};
    for(int i=0;i<names.Length;i++) {
@@ -25,7 +25,7 @@ namespace RogControl {
    if(originalMotherboardTab=="磁盘信息"){OriginalStoragePage();return;}
    if(originalMotherboardTab=="可编程接针"){OriginalBoardArgbPage(content);return;}
    if(originalMotherboardTab!="5\" LCD Display") {
-    content.Children.Add(Paragraph("未接通",13,muted));return;
+    content.Children.Add(Paragraph("功能暂不可用",13,muted));return;
    }
    Dictionary<string,object> snapshot;sdkSnapshots.TryGetValue("lcd:7299",out snapshot);
    var body=new Grid();body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(40,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(28)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(60,GridUnitType.Star)});
@@ -35,12 +35,8 @@ namespace RogControl {
    var toggle=new Border{Width=62,Height=29,CornerRadius=new CornerRadius(15),Background=power==true?accent:Brush("#303030"),HorizontalAlignment=HorizontalAlignment.Left,Child=new TextBlock{Text=power.HasValue?(power.Value?"ON":"OFF"):"—",Foreground=power==true?Brush("#151515"):muted,FontSize=12,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
    toggle.ToolTip="点击切换屏幕电源";toggle.IsEnabled=HardwareWritesEnabled&&power.HasValue&&!busy;toggle.Cursor=System.Windows.Input.Cursors.Hand;toggle.MouseLeftButtonUp+=async(s,e)=>{if(power.HasValue&&!busy)await SetOriginalNative("lcd","7299","powerS0",new Dictionary<string,object>{{"value",!power.Value}});};powerRow.Children.Add(toggle);
    var gear=Button("⚙",OpenLcdSettings);gear.IsEnabled=snapshot!=null&&!busy&&!render;gear.FontSize=18;gear.Padding=new Thickness(7,2,7,2);gear.Margin=new Thickness(0);gear.ToolTip="亮度、关机电源与待机设置";Grid.SetColumn(gear,1);powerRow.Children.Add(gear);left.Children.Add(powerRow);
-   var display=new Border{Width=208,Height=370,Background=Brush("#090909"),BorderBrush=Brush("#454545"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(4),Margin=new Thickness(0,22,0,15),HorizontalAlignment=HorizontalAlignment.Center};
-   if(lcdSelectedPreset.HasValue&&!lcdMonitorMode)display.Child=OriginalInstalledImage(LcdPresetPath(lcdSelectedPreset.Value),204,366);else{var noPreview=Label(lcdMonitorMode?"硬件监控预览不可用":"未选择预设",12,muted);noPreview.HorizontalAlignment=HorizontalAlignment.Center;noPreview.VerticalAlignment=VerticalAlignment.Center;noPreview.Margin=new Thickness(0);display.Child=noPreview;}left.Children.Add(display);var draftCaption=Label("编辑预览 · 当前屏幕内容未读回",11,muted);draftCaption.TextAlignment=TextAlignment.Center;left.Children.Add(draftCaption);
-   string dimensions=OriginalStateText(snapshot,"displayWidth","—")+" × "+OriginalStateText(snapshot,"displayHeight","—");
-   var dimensionsLabel=Label(dimensions,11,muted);dimensionsLabel.TextAlignment=TextAlignment.Center;dimensionsLabel.Margin=new Thickness(0,0,0,13);left.Children.Add(dimensionsLabel);
-   var read=Button(busy?"正在读取…":"读取屏幕状态",async()=>await ReadOriginalSnapshot("lcd","7299"));read.FontSize=11;read.Padding=new Thickness(10,5,10,5);read.HorizontalAlignment=HorizontalAlignment.Center;read.Margin=new Thickness(0,0,0,13);read.IsEnabled=!busy;left.Children.Add(read);
-   var firmware=Label("固件  "+OriginalStateText(snapshot,"firmware","—")+"     亮度  未读回",11,muted);firmware.TextAlignment=TextAlignment.Center;firmware.Margin=new Thickness(0);left.Children.Add(firmware);if(!String.IsNullOrEmpty(nativeSettingsMessage))left.Children.Add(Paragraph(nativeSettingsMessage,11,muted));
+   var display=new Border{Width=169,Height=301,Background=Brush("#090909"),BorderBrush=Brush("#454545"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(4),Margin=new Thickness(0,22,0,15),HorizontalAlignment=HorizontalAlignment.Center};
+   if(lcdSelectedPreset.HasValue&&!lcdMonitorMode)display.Child=OriginalInstalledImage(LcdPresetPath(lcdSelectedPreset.Value),165,297);left.Children.Add(display);
    var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,0,21)};
    var applyContent=Button("应用",ApplyLcdDraft);applyContent.IsEnabled=lcdMonitorMode?LcdWritable(snapshot,"hardwareMonitorWritable"):lcdSelectedPreset.HasValue&&LcdWritable(snapshot,"presetWritable");var resetDraft=Button("默认",()=>{lcdSelectedPreset=0;lcdMonitorMode=false;ShowPage(page);});resetDraft.ToolTip="选择默认预设，点击应用后显示";foreach(var button in new[]{applyContent,resetDraft}){button.MinWidth=74;button.Padding=new Thickness(12,7,12,7);button.Margin=new Thickness(9,0,0,0);actions.Children.Add(button);}right.Children.Add(actions);
    var modes=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,16)};
@@ -54,7 +50,6 @@ namespace RogControl {
     // Thumbnails show the installed preset assets, never imply they are the
     // live screen contents. GIFs use WPF's first frame for the thumbnail.
     var image=OriginalInstalledImage(path,80,142);
-    if(i==1){var preview=new Grid();preview.Children.Add(image);var caption=Label("安装预设",10,muted);caption.TextAlignment=TextAlignment.Center;caption.VerticalAlignment=VerticalAlignment.Bottom;caption.Margin=new Thickness(0,0,0,7);preview.Children.Add(caption);image=preview;}
     int presetId=i;var slot=new Border{Child=image,BorderBrush=lcdSelectedPreset==i?accent:border,BorderThickness=new Thickness(lcdSelectedPreset==i?2:1),Padding=new Thickness(3),Margin=new Thickness(i%7==0?0:4,0,i%7==6?0:4,13),Background=Brush("#141414"),ToolTip="选择预设 "+(i+1)+" · 点击应用后显示",Cursor=System.Windows.Input.Cursors.Hand};slot.MouseLeftButtonUp+=(s,e)=>{lcdSelectedPreset=presetId;ShowPage(page);};Grid.SetColumn(slot,i%7);Grid.SetRow(slot,i/7);presets.Children.Add(slot);
    }
    right.Children.Add(presets);content.Children.Add(body);
@@ -68,27 +63,23 @@ namespace RogControl {
   }
 
   void OriginalControllerPage() {
-   var title=Label("ROG EURUX",24,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,24);content.Children.Add(title);HardwareControlHint(content);
+   var title=Label("ROG EURUX",24,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,24);content.Children.Add(title);
    // Tab identities and authored fallback text are verified in the installed
    // View/7576/resources/src/_ref/caps.json functionList. No default RPM from
    // that capability file is treated as a current hardware reading.
    var tabs=new StackPanel{Orientation=Orientation.Horizontal};
    foreach(string name in new[]{"Fan PWM","Lighting Effect","FW Updated"}) {
-    string tab=name;var button=Button(tab,()=>{originalControllerTab=tab;ShowPage(page);});button.Margin=new Thickness(0,0,30,0);button.Padding=new Thickness(0,0,0,13);button.FontSize=14;
+    string tab=name;string label=name=="Fan PWM"?"风扇控制":name=="Lighting Effect"?"风扇灯效":"固件更新";var button=Button(label,()=>{originalControllerTab=tab;ShowPage(page);});button.Margin=new Thickness(0,0,30,0);button.Padding=new Thickness(0,0,0,13);button.FontSize=14;
     var template=new ControlTemplate(typeof(Button));var frame=new FrameworkElementFactory(typeof(Border));frame.SetValue(Border.PaddingProperty,new Thickness(0,0,0,13));frame.SetValue(Border.BorderThicknessProperty,new Thickness(0,0,0,2));frame.SetValue(Border.BorderBrushProperty,originalControllerTab==tab?accent:Brush("#00000000"));frame.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));template.VisualTree=frame;button.Template=template;tabs.Children.Add(button);
    }
    content.Children.Add(tabs);content.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(0,0,0,20)});
-   var reference=Paragraph("原版设备页面在本机返回“页面出错 (H-2004)”，布局参照尚未完成。",12,muted);reference.Margin=new Thickness(0,0,0,20);content.Children.Add(reference);
    Dictionary<string,object> snapshot;sdkSnapshots.TryGetValue("fan:7576",out snapshot);
    if(originalControllerTab=="Lighting Effect"){OriginalControllerLightingPage(content,snapshot);return;}
    if(originalControllerTab=="FW Updated"){
     content.Children.Add(Paragraph("当前控制器固件  "+OriginalStateText(snapshot,"firmware","—"),14,text));
-    var readFirmware=Button("读取控制器固件",async()=>await ReadOriginalSnapshot("fan","7576"));readFirmware.IsEnabled=!busy&&!render;content.Children.Add(readFirmware);
-    content.Children.Add(Paragraph("固件安装尚未实现。请通过官方更新中心确认适用版本。",12,muted));return;
+    var update=Button("检查更新",()=>{});update.IsEnabled=false;content.Children.Add(update);return;
    }
-   var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,22)};
-   var read=Button(busy?"正在读取…":"读取控制器状态",async()=>await ReadOriginalSnapshot("fan","7576"));read.IsEnabled=!busy;read.FontSize=12;read.Padding=new Thickness(13,7,13,7);actions.Children.Add(read);
-   var state=Label(snapshot==null?"尚未读取":"本次读取快照",11,muted);state.Margin=new Thickness(7,0,0,0);state.VerticalAlignment=VerticalAlignment.Center;actions.Children.Add(state);content.Children.Add(actions);
+   if(busy)content.Children.Add(Label("正在加载…",11,muted));
    var rpmTitle=Label("端口转速",17,text,FontWeights.SemiBold);rpmTitle.Margin=new Thickness(0,0,0,13);content.Children.Add(rpmTitle);
    var ports=new Grid();for(int i=0;i<4;i++)ports.ColumnDefinitions.Add(new ColumnDefinition());
    for(int i=0;i<4;i++) {
@@ -106,7 +97,6 @@ namespace RogControl {
    content.Children.Add(temperatures);
    OriginalControllerSettings(content,snapshot);
    OriginalControllerTemperatureSourceEditor(content,snapshot);
-   var note=Paragraph("风扇曲线可向在线端口发送 PWM 设置；灯效、固件更新与自动调校仍未接通。",11,muted);note.Margin=new Thickness(0,17,0,0);content.Children.Add(note);
   }
 
   Border OriginalReadout(string name,string value) {

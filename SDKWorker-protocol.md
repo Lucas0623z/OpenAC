@@ -28,7 +28,27 @@ Failure: `{"id":1,"ok":false,"kind":"lcd","op":"set","error":{"code":"INVALID_RE
 
 Write failures also return `data:{writeAttempted:true,hardwareAcknowledged:false,readbackConfirmed:false,appliedState:"unknown"}`. Do not retry or restore automatically: an unsuccessful native call does not prove that no partial change occurred. Validation failures have no native I/O and no write-attempt metadata.
 
-The public protocol accepts `scan`, `read`, LCD-only `sensors`, and allowlisted `set`. It never accepts arbitrary XML, DLL paths or function numbers. A read scans when needed; **a set never scans** and requires the exact device to have been scanned and a successful alive-device read in the current worker. Every setter rejects unknown fields. Numeric settings require JSON integers, switches require JSON booleans, and `deviceId`/`portId` require strings.
+The public protocol accepts `scan`, `read`, LCD-only `sensors`/`media`, and allowlisted `set`. It never accepts arbitrary XML, DLL paths or function numbers. A read scans when needed; **a set never scans** and requires the exact device to have been scanned and a successful alive-device read in the current worker. Every setter rejects unknown fields. Numeric settings require JSON integers, switches require JSON booleans, and `deviceId`/`portId` require strings.
+
+## LCD user-media slots (additional source-confirmed route)
+
+After scan and a successful alive-device read:
+
+```json
+{"id":11,"op":"media","kind":"lcd","deviceId":"7299"}
+{"id":12,"op":"set","kind":"lcd","deviceId":"7299","setting":"selectMedia","slot":0,"durationSeconds":10}
+{"id":13,"op":"set","kind":"lcd","deviceId":"7299","setting":"deleteMedia","slot":0,"confirmSlotDeletion":true}
+```
+
+`media` sends only GET26 (free space) and GET1 (configured media profile). It reports verified `freeSpaceKiB`, current profile groups and their readback status. `slots:null,slotOccupancyReadable:false` is intentional: no uploaded-slot inventory getter exists in the inspected source. Slots are 0–31, independently of whether a chosen slot currently contains content. No cached local gallery is presented as hardware inventory.
+
+`selectMedia` selects one existing custom JPEG slot through function2/profile4/multi_media_player with `type0,source0,index_format=slot`, then GET1 checks configuration metadata. It does not upload, invent a populated slot or confirm displayed pixels. Durations use the same 5/10/20/30/60-second source options as presets.
+
+`deleteMedia` accepts only one exact user JPEG slot plus the JSON boolean `confirmSlotDeletion:true`. It sends function29/settings/media_delete/type0/index=slot. There is no delete-all99 route, local source-file deletion or automatic retry. Reply `deletionAcknowledged` means an explicit native response accepted the command; `deletionReadbackConfirmed:false` remains because neither inventory nor slot-emptiness readback is proven. A return-only result remains unconfirmed.
+
+The installed motherboard caps for PID7299/lcdType51 explicitly restrict custom upload to JPEG with a 64MB storage limit. Its two built-in animations do not establish user GIF/video upload support. The generic AIO module includes GIF/MP4 conversion and AVI transfer, but those routes must be tied to a model's actual caps before declaration. This worker therefore exposes `userUploadFormats:["jpg"],animationUploadSupported:false` for7299. No unsupported format is silently mapped to JPEG or a native animation index.
+
+Added synthetic validation: total290 checks passed, physical hardware writes0 and native DLL loads0. Covers only-space/profile reads, exact slot/type/duration fields, selection metadata readback, explicit deletion confirmation and range validation before I/O, no implicit delete-all, ACK/return-only/failure distinction, absent slot inventory, invalid free-space output and unscanned-session refusal. No physical slot was selected, uploaded or deleted by this change.
 
 Native logs can emit extra lines despite stdout redirection. Accept only parseable objects with `id`, `ok`, `kind` and `op`; maintain request deadlines and terminate an unresponsive child. Native crashes cannot be caught in C#. Do not automatically retry a repeatedly crashing kind.
 
@@ -185,7 +205,7 @@ A bounded read-only timing on 2026-10-13 found fresh-worker scan 3973 ms and rea
 {"id":13,"op":"set","kind":"lcd","deviceId":"7299","setting":"uploadImage","filePath":"D:\\Pictures\\example.jpg","slot":4,"durationSeconds":5}
 ```
 
-The caller must explicitly choose slot 0–31 after being told that existing slot content may be overwritten. The worker never chooses a slot, guesses emptiness, deletes device media, or retries a failed transfer. `overwritesExistingSlot:true,slotOccupancyConfirmed:false` is returned even if the chosen slot may happen to be empty. GET_PROFILE is not an uploaded-slot inventory.
+The caller must explicitly choose slot 0–31 after being told that existing slot content may be overwritten. The worker never chooses a slot, guesses emptiness, implicitly deletes device media, or retries a failed transfer. `overwritesExistingSlot:true,slotOccupancyConfirmed:false` is returned even if the chosen slot may happen to be empty. GET_PROFILE is not an uploaded-slot inventory.
 
 `filePath` must be an absolute local drive path to JPG/JPEG, with no alternate data stream, UNC/network drive or reparse-point traversal. The source is opened only with read access, must be at most 64 MiB and contain a decodable JPEG; dimensions are limited to 16384 each/64 million pixels. An independent in-memory conversion honors EXIF orientation, fits the complete image into 720×1280, preserves aspect ratio, and fills remaining pixels black. It generates a 24-bit JPEG. The original file is never written. No installed converter executable is launched.
 
@@ -219,7 +239,15 @@ Evidence remains in the user's installation; no extracted implementation is pack
 * `modules\aio\index.js`: power 7/21 and strict getter 6/20 mappings, brightness 37, standby 24, media profile 2, raw getter 1; module 283 motherboard `/mb/lcd` distinguishes JPG/dynamic animation/monitor types; generic `cropImage` maps 25→26→27, JPEG transfer type 0; `getLightingHardwareSensor` maps read-only 36.
 * Mainboard `View\E7C8DA76-C9B9-4297-8681-DD878330AFE7\82-bundle-4b237.js`: brightness slider min 10/max 100/step 10. Its caps identify PID 7299, play device AIO2_PANEL, paired S0/S5 brightness and native media indices.
 
-Unsupported here: firmware/bootloader updates, calibration, electrical DC/PWM mode changes, custom fan spin-up/down timing, SDK port renaming, GIF/video/custom monitor-background upload, media deletion, automatic slot allocation, uploaded-slot inventory, arbitrary profiles/XML, and current brightness/standby/fan-curve readback. Displayed asset identity remains visually unverified. No services, DLL registration, installed files or firmware are changed by this adapter itself. Explicit caller `set` operations can change fan/LCD settings and JPEG media as described; read/scan never perform those writes.
+Unsupported here: firmware/bootloader updates, calibration, electrical DC/PWM mode changes, custom fan spin-up/down timing, SDK port renaming, GIF/video/custom monitor-background upload, automatic slot allocation, uploaded-slot inventory, arbitrary profiles/XML, and current brightness/standby/fan-curve readback. Displayed asset identity remains visually unverified. No services, DLL registration, installed files or firmware are changed by this adapter itself. Explicit caller `set` operations can change fan/LCD settings and JPEG media as described; read/scan never perform those writes.
+
+## Source-prepared LCD51 family
+
+LCD `scan` now accepts an optional exact `deviceId`: `7124` (ROG MAXIMUS Z890 EXTREME), `7299` (ROG CROSSHAIR X870E EXTREME, unchanged default), or `7571` (ROG CROSSHAIR X870E EXTREME GLACIAL). These three installed caps share LCD51, 720×1280, 32 JPEG user slots, `AIO2_PANEL`, the same 2 animation + 6 image native preset mapping, and the JPEG-only custom-upload restriction. Preset preview filenames are selected from each model's own caps. The capability getter must return the requested exact model ID; a different model is excluded. Unknown model IDs and extra scan fields are rejected before native I/O. Four-character firmware responses must contain hexadecimal digits and differ from `0000` before validating the device as alive.
+
+`family:"motherboardLcd51",sourcePrepared:true,hardwareWriteValidated:false` separates source-confirmed preparation from physical write testing. Only the existing 7299 read path has been checked on this machine. Additional models have synthetic/source verification only; no writes or firmware checks were performed on them. Model caps firmware-limit strings are recorded as evidence and are not guessed into a new version-ordering policy.
+
+Latest synthetic suite: **310 checks passed**, hardware writes 0, installed native DLL loads 0. New cases cover exact requested-model routing, mismatched capability exclusion, model-specific preset names, and malformed firmware preventing setters.
 
 ## Unstable mouse and keyboard SDKs
 

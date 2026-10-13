@@ -8,7 +8,7 @@ using System.Windows.Media;
 
 namespace RogControl {
  public partial class MainWindow {
-  string auraTab="Aura 灯效";bool experimentalLighting;
+  string auraTab="Aura 灯效";bool experimentalLighting {get{return HardwareWritesEnabled;}}
   static readonly string[] AuraNames={"恒亮","呼吸","闪烁","彩色循环","彩虹","星夜","音乐","智能","同步辨色","沉浸","黑暗 (关闭)","AI 神光同步"};
   static readonly string[] AuraKeys={"static","breathe","flash","cycle","rainbow","stars","music","smart","adaptive","immersive","off","ai"};
   static readonly string[] AuraSymbols={"◉","◌","☀","◷","≋","✦","♫","♙","▣","◈","⊘","✧"};
@@ -24,7 +24,7 @@ namespace RogControl {
    for(int i=0;i<AuraKeys.Length;i++){
     string key=AuraKeys[i];bool supported=new[]{"static","breathe","cycle","off"}.Contains(key);
     var stack=new StackPanel();var symbol=Label(AuraSymbols[i],38,effect==key?accent:muted);symbol.FontFamily=new FontFamily("Segoe UI Symbol");symbol.TextAlignment=TextAlignment.Center;symbol.Margin=new Thickness(0,0,0,8);stack.Children.Add(symbol);var name=Label(AuraNames[i],12,effect==key?accent:text);name.TextAlignment=TextAlignment.Center;name.Margin=new Thickness(0);stack.Children.Add(name);
-    var button=Button("",async()=>{effect=key;if(experimentalLighting)await ApplyAura();else ShowPage(page);});button.Content=stack;button.Background=Brushes.Transparent;button.BorderThickness=new Thickness(0);button.Padding=new Thickness(2,5,2,5);button.Margin=new Thickness(1);button.IsEnabled=supported&&!busy;button.ToolTip=supported?"选择灯效；启用试用后，点击会应用到所选主板灯控。":"此灯效尚未接通";ToolTipService.SetShowOnDisabled(button,true);Grid.SetColumn(button,i%6);Grid.SetRow(button,i/6);grid.Children.Add(button);
+    var button=Button("",async()=>{effect=key;if(experimentalLighting)await ApplyAura();else ShowPage(page);});button.Content=stack;button.Background=Brushes.Transparent;button.BorderThickness=new Thickness(0);button.Padding=new Thickness(2,5,2,5);button.Margin=new Thickness(1);button.IsEnabled=supported&&!busy;button.ToolTip=supported?HardwareWritesEnabled?"应用灯效":HardwareControlPolicy.BlockedMessage:"此灯效暂不可用";ToolTipService.SetShowOnDisabled(button,true);Grid.SetColumn(button,i%6);Grid.SetRow(button,i/6);grid.Children.Add(button);
    }
    left.Children.Add(grid);left.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(0,13,0,22)});left.Children.Add(OriginalAuraHeading("高级灯效"));
    var advanced=new Grid{Margin=new Thickness(12,22,8,10)};advanced.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(60)});advanced.ColumnDefinitions.Add(new ColumnDefinition());advanced.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
@@ -37,9 +37,7 @@ namespace RogControl {
    var hex=new TextBox{Text=color,Width=118,HorizontalAlignment=HorizontalAlignment.Left,Foreground=text,Background=bg,BorderBrush=border,Padding=new Thickness(6),Margin=new Thickness(0,2,0,16)};
    hex.TextChanged+=(s,e)=>color=hex.Text.Trim();hex.KeyDown+=async(s,e)=>{if(e.Key==Key.Enter&&experimentalLighting){e.Handled=true;await ApplyAura();}};settings.Children.Add(hex);
    settings.Children.Add(new RadioButton{Content="渐变",Foreground=muted,IsEnabled=false,Margin=new Thickness(0,2,0,13)});settings.Children.Add(Label("颜色配置",13,muted));var gradient=Row();foreach(string v in new[]{"#00BFFF","#FFAA00"})gradient.Children.Add(new Border{Width=34,Height=32,Background=Brush(v),Margin=new Thickness(0,0,16,0),Opacity=0.45});settings.Children.Add(gradient);settings.Children.Add(Label("方向",13,muted));var direction=new ComboBox{IsEnabled=false,Height=32,Margin=new Thickness(0,2,0,20)};direction.Items.Add("未接通");direction.SelectedIndex=0;settings.Children.Add(direction);
-   var trial=new CheckBox{Content="试用灯效（写入尚未实机验证）",IsChecked=experimentalLighting,Foreground=muted,FontSize=11,Margin=new Thickness(0,12,0,10)};trial.Checked+=(s,e)=>experimentalLighting=true;trial.Unchecked+=(s,e)=>experimentalLighting=false;settings.Children.Add(trial);
-   settings.Children.Add(Paragraph("启用后点击灯效或色块才会应用。\n退出后硬件会保留最后的灯效。",11,muted));right.Children.Add(new Border{BorderBrush=border,BorderThickness=new Thickness(1),Padding=new Thickness(22),MinHeight=475,Child=settings});content.Children.Add(body);
-   content.Children.Add(Paragraph(auraMessage,11,muted));
+   right.Children.Add(new Border{BorderBrush=border,BorderThickness=new Thickness(1),Padding=new Thickness(22),MinHeight=475,Child=settings});content.Children.Add(body);
   }
   UIElement OriginalTabs(string[] names,string active,Action<string> select,Brush ink,double width) {
    var tabs=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,4,0,16)};
@@ -47,9 +45,9 @@ namespace RogControl {
   }
   UIElement OriginalAuraHeading(string heading){var row=new StackPanel{Orientation=Orientation.Horizontal};row.Children.Add(Label("╱╱╱",18,Brush("#B73038"),FontWeights.Bold));var label=Label(heading,18,text);label.Margin=new Thickness(11,0,0,0);row.Children.Add(label);return row;}
   void OriginalAuraDevices() {
-   var commands=Row();commands.Children.Add(Button(busy?"正在读取…":"重新扫描",async()=>await ScanAura()));commands.Children.Add(Button("关闭本程序连接",async()=>await ReleaseAura()));content.Children.Add(commands);
-   content.Children.Add(Paragraph(auraMessage,12,muted));
-   foreach(var device in devices){var d=device;var box=new StackPanel();box.Children.Add(OriginalInstalledImage(OriginalProductImage("motherboard"),160));var check=new CheckBox{Content=info.Board,Foreground=text,IsChecked=selected.Contains(d.id),HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,16,0,10)};check.Checked+=(s,e)=>selected.Add(d.id);check.Unchecked+=(s,e)=>selected.Remove(d.id);box.Children.Add(check);var detail=Paragraph(d.zoneCount+" 个逻辑 ARGB 通道 · 固件 "+d.firmware+"\n通道数不是实际灯珠数；外设同步尚未接通。",11,muted);detail.TextAlignment=TextAlignment.Center;box.Children.Add(detail);content.Children.Add(new Border{Width=320,HorizontalAlignment=HorizontalAlignment.Left,Padding=new Thickness(20),BorderBrush=border,BorderThickness=new Thickness(1),Child=box});}
+   var commands=Row();commands.Children.Add(Button(busy?"正在读取…":"重新扫描",async()=>await ScanAura()));commands.Children.Add(Button("停止同步",async()=>await ReleaseAura()));content.Children.Add(commands);
+   if(devices.Count==0)content.Children.Add(Paragraph(busy?"正在连接…":"未连接",12,muted));
+   foreach(var device in devices){var d=device;var box=new StackPanel();box.Children.Add(OriginalInstalledImage(OriginalProductImage("motherboard"),160));var check=new CheckBox{Content=info.Board,Foreground=text,IsChecked=selected.Contains(d.id),HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,16,0,10)};check.Checked+=(s,e)=>selected.Add(d.id);check.Unchecked+=(s,e)=>selected.Remove(d.id);box.Children.Add(check);content.Children.Add(new Border{Width=320,HorizontalAlignment=HorizontalAlignment.Left,Padding=new Thickness(20),BorderBrush=border,BorderThickness=new Thickness(1),Child=box});}
   }
  }
 }

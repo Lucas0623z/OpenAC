@@ -32,10 +32,11 @@ internal static partial class GearLinkWorker
         for(int i=1;i<=12;i++)result.Add("F"+i,57+i);
         return result;
     }
-    internal static object FeatureOptions(string kind)
+    internal static int[] KeyboardPollingRates(int modelPid) { return modelPid==7586||modelPid==7588?new int[]{1000,8000}:new int[0]; }
+    internal static object FeatureOptions(string kind,int modelPid=0)
     {
         if(kind=="mouse")return Obj("buttonSources",MouseButtons,"buttonTargets",MouseTargets.Keys.ToArray(),"zonePollingRates",new int[]{125,250,500,1000,2000,4000,8000},"zoneTxPower",new object[]{Obj("value",0,"name","FullPower"),Obj("value",1,"name","EnvironmentAdaptive")});
-        if(kind=="keyboard")return Obj("keySources",KeyboardKeys.Keys.Where(k=>!k.StartsWith("AV_")&&k!="Disabled"&&k!="Default").ToArray(),"keyTargets",KeyboardKeys.Keys.Where(k=>!k.StartsWith("Lever")).ToArray(),"oledModes",new string[]{"Animation","Clock","LaptopBattery","HWInfo","KPM"},"leverModes",new string[]{"MediaVolume","MediaContent","LightBrightnessPerKeyZone","LightBrightnessOLED","LightEffectSwitch","FanControlMB","FanControlAIO","Customize"},"oledBarItems",OledBarItems);
+        if(kind=="keyboard")return Obj("pollingRates",KeyboardPollingRates(modelPid),"keySources",KeyboardKeys.Keys.Where(k=>!k.StartsWith("AV_")&&k!="Disabled"&&k!="Default").ToArray(),"keyTargets",KeyboardKeys.Keys.Where(k=>!k.StartsWith("Lever")).ToArray(),"oledModes",new string[]{"Animation","Clock","LaptopBattery","HWInfo","KPM"},"leverModes",new string[]{"MediaVolume","MediaContent","LightBrightnessPerKeyZone","LightBrightnessOLED","LightEffectSwitch","FanControlMB","FanControlAIO","Customize"},"oledBarItems",OledBarItems);
         return Obj();
     }
     internal static void ReadFeatures(GearHid hid,GearDescriptor descriptor,byte report,string kind,Dictionary<string,object> request,Dictionary<string,object> snapshot,List<string> caps,List<object> errors)
@@ -62,8 +63,9 @@ internal static partial class GearLinkWorker
             var value=request.ContainsKey("value")?request["value"] as Dictionary<string,object>:null;
             if(value==null||!value.ContainsKey("source"))throw new ArgumentException("keyBinding read requires value.source.");
             string source=value["source"] as string;int code=KeyCode(KeyboardKeys,source);if(source=="Disabled"||source=="Default"||source.StartsWith("AV_"))throw new ArgumentException("Unsupported physical key source.");
-            bool lever=source.StartsWith("Lever");byte[] packet=lever?Packet(0x25,12,0,7,(byte)code,(byte)(code>>8)):Packet(0x25,160,0,(byte)code,(byte)(code>>8));
-            QueryField(hid,report,packet,"keyBinding",errors,b=>{Require(b,lever?6:8);int target=U16(b,lever?4:6);snapshot["keyBinding"]=Obj("source",source,"sourceCode",code,"target",NameForCode(KeyboardKeys,target),"targetCode",target,"lever",lever);caps.Add("keyBinding");});
+            if(!LegacyKeyboard(descriptor.Pid))throw new ArgumentException("This keyboard binding protocol has not been verified for the model.");
+            bool lever=source.StartsWith("Lever");byte[] packet=lever?Packet(0x25,12,0,7,(byte)code,(byte)(code>>8)):Packet(0x25,13,0,(byte)code,(byte)(code>>8));
+            QueryField(hid,report,packet,"keyBinding",errors,b=>{snapshot["keyBinding"]=ParseKeyboardBinding(source,b);caps.Add("keyBinding");});
         }
     }
     internal static Dictionary<string,object> ParseZone(byte[] b)
@@ -78,10 +80,11 @@ internal static partial class GearLinkWorker
     internal static bool ReadBoolean(byte[] b,int offset){Require(b,offset+1);if(b[offset]>1)throw new IOException("Unknown switch value.");return b[offset]==1;}
     internal static bool[] ReadBooleans(byte[] b,int[] offsets){return offsets.Select(i=>ReadBoolean(b,i)).ToArray();}
     internal static string NameForCode(Dictionary<string,int> map,int code){foreach(var pair in map)if(pair.Value==code)return pair.Key;return null;}
+    internal static Dictionary<string,object> ParseKeyboardBinding(string source,byte[] response){Require(response,6);int code=KeyCode(KeyboardKeys,source),target=U16(response,4);return Obj("source",source,"sourceCode",code,"target",NameForCode(KeyboardKeys,target),"targetCode",target,"lever",source.StartsWith("Lever"));}
     internal static int KeyCode(Dictionary<string,int> map,string name){int code;if(name==null||!map.TryGetValue(name,out code))throw new ArgumentException("Unknown key or function name.");return code;}
     internal static void AddFeatureSetCapabilities(string kind,bool online,Dictionary<string,object> state,Dictionary<string,object> snapshot,List<string> caps)
     {
-        state["settingOptions"]=FeatureOptions(kind);if(!online)return;var setters=new List<string>((string[])state["setCapabilities"]);
+        object pid;int model=state.TryGetValue("pid",out pid)&&pid is int?(int)pid:0;state["settingOptions"]=FeatureOptions(kind,model);if(!online)return;var setters=new List<string>((string[])state["setCapabilities"]);
         if(kind=="mouse"){if(caps.Contains("zoneSettings"))setters.Add("zoneSettings");if(caps.Contains("buttonBindings")||caps.Contains("shiftButtonBindings"))setters.Add("buttonBinding");}
         if(kind=="keyboard") {foreach(string name in new string[]{"oledEnabled","oledBrightness","oledMode","oledKpsEnabled","oledPreset","leverMode","keyBinding"})if(caps.Contains(name))setters.Add(name);if(caps.Contains("oledModeStates"))setters.Add("oledModeEnabled");if(caps.Contains("leverModeStates"))setters.Add("leverModeEnabled");if(caps.Contains("oledBarInfo"))setters.Add("oledBarItem");}
         state["setCapabilities"]=setters.Distinct().ToArray();
@@ -115,7 +118,7 @@ internal static partial class GearLinkWorker
     internal static bool IsFeatureQuery(string kind,byte[] packet)
     {
         if(kind!="keyboard"||packet.Length<4||packet[2]!=0||packet[3]!=0)return false;
-        return packet[0]==0x21&&packet[1]==0||packet[0]==0x22&&packet[1]==1||packet[0]==0x23&&packet[1]<=4||packet[0]==0x24&&packet[1]>=1&&packet[1]<=3||packet[0]==0x25&&(packet[1]==11||packet[1]==12||packet[1]==160);
+        return packet[0]==0x21&&packet[1]==0||packet[0]==0x22&&packet[1]==1||packet[0]==0x23&&packet[1]<=4||packet[0]==0x24&&packet[1]>=1&&packet[1]<=3||packet[0]==0x25&&(packet[1]==11||packet[1]==12||packet[1]==13);
     }
     internal static bool IsFeatureWrite(string kind,byte[] packet)
     {
@@ -168,7 +171,20 @@ internal static partial class GearLinkWorker
         blocked=false;try{BuildFeatureSetting("mouse","buttonBinding",Obj("button","rawCode","target","KeyA","shift",false),before);}catch(ArgumentException){blocked=true;}check(blocked);
         blocked=false;try{ParseZone(new byte[]{18,20,1,0,255,6,63,6,31,3,1});}catch(IOException){blocked=true;}check(blocked);
         check(KeyboardKeys["KeyA"]!=MouseTargets["KeyA"]);check(!KeyboardKeys.ContainsKey("Backslash"));
-        check(IsFeatureQuery("keyboard",Packet(0x25,160,0,31,0)));check(!IsFeatureQuery("keyboard",Packet(0x25,37,0,0,31,0)));check(!IsFeatureQuery("mouse",Packet(0x23,3,0)));
+        check(IsFeatureQuery("keyboard",Packet(0x25,13,0,31,0)));check(!IsFeatureQuery("keyboard",Packet(0x25,37,0,0,31,0)));check(!IsFeatureQuery("mouse",Packet(0x23,3,0)));
+        var legacyRequest=Packet(0x23,3,0);var legacyReply=new byte[]{2,0x23,3,1,0,60};check(ResponseMatches(7588,2,legacyRequest,legacyReply,legacyReply.Length));check(ResponseMatches(7586,2,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7548,2,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7588,3,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7588,2,legacyRequest,new byte[]{2,0x23,4,1,0,60},6));check(!ResponseMatches(7588,2,legacyRequest,legacyReply,2));check(!ResponseMatches(7588,2,legacyRequest,legacyReply,legacyReply.Length+1));check(ResponseMatches(6862,1,Packet(0xA0,0,0),new byte[]{1,0xA0,0,1,0},5));
+        var binding=ParseKeyboardBinding("KeyA",new byte[]{0x25,13,1,0,50,0});check((string)binding["target"]=="KeyB"&&(int)binding["targetCode"]==50&&(int)binding["sourceCode"]==31);check((string)ParseKeyboardBinding("KeyA",new byte[]{0x25,13,0,0,255,0})["target"]=="Default");check(ParseKeyboardBinding("KeyA",new byte[]{0x25,13,0,0,231,3})["target"]==null);check(!IsFeatureQuery("keyboard",Packet(0x25,160,0,31,0)));
+        check(DeviceErrorResponse(2,new byte[]{2,255,170,0,2,3},6));check(!DeviceErrorResponse(3,new byte[]{2,255,170,0,2,3},6));check(!DeviceErrorResponse(2,new byte[]{2,255,170},2));check(!DeviceErrorResponse(2,new byte[]{2,0x23,3,0,0,50},6));
+        check(KeyboardPollingRates(7588).SequenceEqual(new[]{1000,8000}));check(KeyboardPollingRates(7586).SequenceEqual(new[]{1000,8000}));check(KeyboardPollingRates(7495).Length==0);
+        foreach(int model in new[]{7586,7588})foreach(int rate in new[]{2000,4000}){bool rejected=false;try{BuildPeripheralSetting("keyboard","pollingRate",rate,Obj("modelPid",model));}catch(ArgumentException){rejected=true;}check(rejected);}
+        check(BuildPeripheralSetting("keyboard","pollingRate",1000,Obj("modelPid",7588)).SequenceEqual(new byte[]{81,49,0,0,0,0}));check(BuildPeripheralSetting("keyboard","pollingRate",8000,Obj("modelPid",7586)).SequenceEqual(new byte[]{81,49,0,0,3,0}));bool unknownModel=false;try{BuildPeripheralSetting("keyboard","pollingRate",8000,Obj());}catch(ArgumentException){unknownModel=true;}check(unknownModel);check(((int[])((Dictionary<string,object>)FeatureOptions("keyboard",7588))["pollingRates"]).SequenceEqual(new[]{1000,8000}));
+        var settingPacket=Packet(0x51,49,15,1,2,1,2,3,4,5);int outputCalls=0,inputCalls=0;var replies=new Queue<byte[]>(new[]{new byte[]{3,0x12,0,2,0,1},new byte[]{3,0x51,49,14,0,1},new byte[]{3,0x51,49,15,0,1}});var receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;check(buffer[0]==3&&buffer.Skip(1).Take(settingPacket.Length).SequenceEqual(settingPacket));return buffer.Length;}inputCalls++;check(budget<=900&&budget>GearBoundedIo.CancelReserveMs);var reply=replies.Dequeue();Array.Copy(reply,buffer,reply.Length);return reply.Length;});check(outputCalls==1&&inputCalls==3&&receipt.OutputCompleted&&receipt.Acknowledged&&!receipt.Rejected);
+        outputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;return buffer.Length;}throw new TimeoutException("fake timeout");});check(outputCalls==1&&receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Warning!=null);
+        outputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;return buffer.Length;}Array.Copy(new byte[]{3,255,170},buffer,3);return 3;});check(outputCalls==1&&receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Rejected);
+        inputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write)return buffer.Length-1;inputCalls++;return 0;});check(!receipt.OutputCompleted&&!receipt.Acknowledged&&inputCalls==0&&receipt.Warning!=null);
+        receipt=SendSettingAndAwaitResponse(7588,2,Packet(0x68,0,0,50),64,64,(write,buffer,budget)=>{if(write)return buffer.Length;Array.Copy(new byte[]{2,0x68,0,1,0,50},buffer,6);return 6;});check(receipt.OutputCompleted&&receipt.Acknowledged);
+        receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write)return buffer.Length;return 0;});check(receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Warning!=null);
+        check(ResponseMatches(7548,3,Packet(0x12,4,2),new byte[]{3,0x12,4,2,0,255,170},7)&&!DeviceErrorResponse(3,new byte[]{3,0x12,4,2,0,255,170},7));
         check(IsFeatureWrite("keyboard",BuildFeatureSetting("keyboard","oledBrightness",50,before)));check(!IsFeatureWrite("headset",BuildFeatureSetting("keyboard","oledBrightness",50,before)));check(!IsFeatureWrite("keyboard",Packet(0x62,0,0,1)));
         check(VersionNative4(new byte[]{16,0,9,0},0)=="9.00.10");check(VersionNative4(new byte[]{9,0,1,0},0)=="1.00.09");check(VersionNative4(new byte[]{9,0,1,1},0)=="101.00.09");
         var origin=new Uri("https://gearlink.asus.com/firmware-update-tools/7489/windows/manifest.json");check(FirmwareCatalog.ToolUri(origin,7489,"./Firmware Tool.zip").Host=="gearlink.asus.com");
