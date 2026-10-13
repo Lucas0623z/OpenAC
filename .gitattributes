@@ -1,0 +1,2 @@
+# Preserve reviewed bytes so provenance SHA256 matches repository/ZIP sources.
+* -text

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "purpose": "source_urls_only",
+  "imagesBundled": false,
+  "redistributionPermissionVerified": false,
+  "termsUrl": "https://rog.asus.com/us/terms-of-notice/official-site/",
+  "assets": [
+    {
+      "target": "motherboard",
+      "sourcePage": "https://rog.asus.com/us/motherboards/rog-crosshair/rog-crosshair-x870e-extreme/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/2AE4F74D-8055-4752-B7CC-CABB53467CDC"
+    },
+    {
+      "target": "keyboard",
+      "sourcePage": "https://rog.asus.com/us/keyboards/keyboards/compact/rog-azoth-extreme-edition-20/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/60038A14-350D-4865-B273-603AD4B3196E"
+    },
+    {
+      "target": "mouse",
+      "sourcePage": "https://rog.asus.com/us/mice-mouse-pads/mice/wireless/rog-harpe-ii-extreme-edition-20/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/33C1ED87-01B0-4286-8D43-9781CBFE32F6"
+    },
+    {
+      "target": "headset",
+      "sourcePage": "https://rog.asus.com/us/headsets-audio/headsets/3-5mm-headsets/rog-delta-ii-kjp/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/D7C1FEFC-3B1A-4634-9EE8-22EE16B02CF0"
+    },
+    {
+      "target": "fan",
+      "sourcePage": "https://rog.asus.com/cooling/fans/rog-gr120-argb-pwm-fan-hub/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/DB38402D-DCDD-4217-A3B5-3F41CA68D356"
+    },
+    {
+      "target": "gpu",
+      "sourcePage": "https://rog.asus.com/us/graphics-cards/graphics-cards/rog-astral/rog-astral-rtx5090-32g-gaming/gallery/",
+      "sourceAsset": "https://dlcdnwebimgs.asus.com/gain/4820879A-7A8E-4171-A78F-FAAD61F1C06E"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
+using System.Linq;
+using System.Management;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
+using Microsoft.Win32.SafeHandles;
+
+// Windows protocol-specific Get Log Page queries only. No storage writes,
+// pass-through commands, firmware commands, or ASUS kernel driver dependency.
+internal static class StorageWorker {
+ static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
+ static Dictionary<string,object> Obj(params object[] fields){var o=new Dictionary<string,object>();for(int i=0;i<fields.Length;i+=2)o[(string)fields[i]]=fields[i+1];return o;}
+ static int Main(string[] args){Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);if(args.Contains("--self-test")){SelfTest();return 0;}string line;while((line=Console.ReadLine())!=null){object id=null;try{if(line.Length>65536)throw new ArgumentException("Request too large.");var r=Json.Deserialize<Dictionary<string,object>>(line);r.TryGetValue("id",out id);object op;if(!r.TryGetValue("op",out op)||Convert.ToString(op)!="scan")throw new ArgumentException("Storage adapter supports scan only.");Console.WriteLine(Json.Serialize(Obj("id",id,"ok",true,"data",Obj("disks",ReadDisks(),"capturedAt",DateTime.Now.ToString("o")))));}catch(Exception ex){Console.WriteLine(Json.Serialize(Obj("id",id,"ok",false,"error",Obj("code","storage_read_failed","message",ex.Message))));}}return 0;}
+ static object[] ReadDisks(){var result=new List<object>();using(var search=new ManagementObjectSearcher("root\\CIMV2","SELECT DeviceID,Model,FirmwareRevision,Size,InterfaceType FROM Win32_DiskDrive",new EnumerationOptions{Timeout=TimeSpan.FromSeconds(6)}))using(var items=search.Get()){foreach(ManagementObject item in items){using(item){string path=Convert.ToString(item["DeviceID"]);var disk=Obj("model",Convert.ToString(item["Model"]).Trim(),"firmware",Convert.ToString(item["FirmwareRevision"]).Trim(),"sizeBytes",item["Size"],"interface",Convert.ToString(item["InterfaceType"]),"smart",null,"error",null);if(Regex.IsMatch(path??"",@"^\\\\\.\\PHYSICALDRIVE[0-9]{1,3}$",RegexOptions.IgnoreCase)){try{disk["smart"]=ReadHealth(path);disk["interface"]="NVM Express";}catch(Exception ex){disk["error"]=ex.Message;}}result.Add(disk);}}}return result.ToArray();}
+ static Dictionary<string,object> ReadHealth(string path){using(var handle=CreateFile(path,0,3,IntPtr.Zero,3,0,IntPtr.Zero)){if(handle.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error(),"SMART access unavailable.");byte[] request=HealthRequest();uint returned;if(!DeviceIoControl(handle,0x002D1400,request,(uint)request.Length,request,(uint)request.Length,out returned,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error(),"NVMe SMART query unavailable.");return ParseHealthDescriptor(request,(int)returned);}}
+ internal static byte[] HealthRequest(){byte[] b=new byte[560];Put(b,0,50);Put(b,8,3);Put(b,12,2);Put(b,16,2);Put(b,24,40);Put(b,28,512);return b;}
+ static void Put(byte[] b,int at,uint value){Array.Copy(BitConverter.GetBytes(value),0,b,at,4);}
+ internal static Dictionary<string,object> ParseHealthDescriptor(byte[] descriptor,int returned){if(descriptor==null||returned<48||returned>descriptor.Length||BitConverter.ToUInt32(descriptor,0)!=48||BitConverter.ToUInt32(descriptor,4)!=48||BitConverter.ToUInt32(descriptor,8)!=3||BitConverter.ToUInt32(descriptor,12)!=2)throw new InvalidOperationException("Invalid NVMe SMART descriptor.");uint offset=BitConverter.ToUInt32(descriptor,24),length=BitConverter.ToUInt32(descriptor,28);if(offset<40||length<512||offset>(uint)returned-8||length>(uint)returned-8-offset)throw new InvalidOperationException("Invalid NVMe SMART data bounds.");int start=8+(int)offset;byte[] health=new byte[512];Array.Copy(descriptor,start,health,0,512);int kelvin=health[1]|health[2]<<8;
+  return Obj("temperature",kelvin>=200&&kelvin<=450?(object)(kelvin-273):null,"hostReadGB",((double)Counter(health,32)*512000.0/1e9).ToString("0",CultureInfo.InvariantCulture),"hostWrittenGB",((double)Counter(health,48)*512000.0/1e9).ToString("0",CultureInfo.InvariantCulture),"powerCycles",Counter(health,112).ToString(),"powerOnHours",Counter(health,128).ToString(),"criticalWarning",(int)health[0],"availableSpare",(int)health[3],"percentageUsed",(int)health[5],"unsafeShutdowns",Counter(health,144).ToString(),"mediaErrors",Counter(health,160).ToString(),"errorLogEntries",Counter(health,176).ToString(),"readbackConfirmed",true,"source","Windows NVMe Get Log Page 02");
+ }
+ static BigInteger Counter(byte[] b,int at){byte[] value=new byte[17];Array.Copy(b,at,value,0,16);return new BigInteger(value);}
+ static void SelfTest(){var request=HealthRequest();if(BitConverter.ToUInt32(request,0)!=50||BitConverter.ToUInt32(request,16)!=2||BitConverter.ToUInt32(request,28)!=512)throw new Exception("Query packet mismatch.");Put(request,0,48);Put(request,4,48);request[49]=58;request[50]=1;request[51]=100;request[53]=3;request[160]=81;request[176]=51;request[192]=19;var health=ParseHealthDescriptor(request,560);if(Convert.ToInt32(health["temperature"])!=41||Convert.ToString(health["powerCycles"])!="81"||Convert.ToString(health["unsafeShutdowns"])!="19")throw new Exception("SMART parse mismatch.");bool rejected=false;try{ParseHealthDescriptor(request,100);}catch(InvalidOperationException){rejected=true;}if(!rejected)throw new Exception("Truncation was accepted.");Put(request,24,uint.MaxValue);rejected=false;try{ParseHealthDescriptor(request,560);}catch(InvalidOperationException){rejected=true;}if(!rejected)throw new Exception("Offset overflow was accepted.");Console.WriteLine("Storage query/parser: 4 checks passed. No hardware access.");}
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern SafeFileHandle CreateFile(string path,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
+ [DllImport("kernel32.dll",SetLastError=true)]static extern bool DeviceIoControl(SafeFileHandle handle,uint code,byte[] input,uint inputLength,byte[] output,uint outputLength,out uint returned,IntPtr overlapped);
+}

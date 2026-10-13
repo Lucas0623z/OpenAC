@@ -1,0 +1,34 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using RogControl;
+
+public static class NativeDraftTests {
+ static int checks;
+ static void Check(bool good,string message){checks++;if(!good)throw new Exception(message);}
+ static Dictionary<string,object> Obj(params object[] pairs){var value=new Dictionary<string,object>();for(int i=0;i<pairs.Length;i+=2)value[(string)pairs[i]]=pairs[i+1];return value;}
+ static BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
+ static IEnumerable<T> Walk<T>(DependencyObject item) where T:DependencyObject {var match=item as T;if(match!=null)yield return match;for(int i=0;i<VisualTreeHelper.GetChildrenCount(item);i++)foreach(var child in Walk<T>(VisualTreeHelper.GetChild(item,i)))yield return child;}
+ static void Render(MainWindow window,string page,string file){typeof(MainWindow).GetField("render",Private).SetValue(window,true);typeof(MainWindow).GetMethod("ShowPage",Private).Invoke(window,new object[]{page});var frame=(FrameworkElement)window.Content;frame.Measure(new Size(1538,826));frame.Arrange(new Rect(0,0,1538,826));frame.UpdateLayout();var bitmap=new RenderTargetBitmap(1538,826,96,96,PixelFormats.Pbgra32);bitmap.Render(frame);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var stream=File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,file)))png.Save(stream);}
+ [STAThread] public static void Main(){var app=new Application();var draft=new ControllerLightDraft{Port="2",Area="outer",Effect="breathe",FanCounts=new[]{1,2,3,4},Brightness=75,Speed=80,Direction="backward",Colors=new[]{"#112233","#445566"},Submitted=new DateTime(2026,10,13),Acknowledgement="unconfirmed"};var submitted=draft.Copy();
+  Check(draft.SameConfiguration(submitted),"initial full configuration copy");Check(!Object.ReferenceEquals(draft.FanCounts,submitted.FanCounts)&&!Object.ReferenceEquals(draft.Colors,submitted.Colors),"arrays detached from editable draft");
+  draft.Port="4";draft.Area="center";draft.Effect="static";draft.FanCounts[1]=10;draft.Brightness=25;draft.Speed=20;draft.Direction="forward";draft.Colors[0]="#FFFFFF";
+  Check(submitted.Port=="2"&&submitted.Area=="outer"&&submitted.Effect=="breathe"&&submitted.FanCounts.SequenceEqual(new[]{1,2,3,4})&&submitted.Brightness==75&&submitted.Speed==80&&submitted.Direction=="backward"&&submitted.Colors.SequenceEqual(new[]{"#112233","#445566"}),"delayed persistence preserves actual submitted port and all values");
+  Check(!draft.SameConfiguration(submitted),"later edits cannot be labelled submitted");Check(submitted.Submitted==new DateTime(2026,10,13)&&submitted.Acknowledgement=="unconfirmed","metadata copied");var requestCounts=(int[])submitted.FanCounts.Clone();var requestColors=(string[])submitted.Colors.Clone();requestCounts[1]=8;requestColors[0]="#000000";Check(submitted.FanCounts[1]==2&&submitted.Colors[0]=="#112233","request arrays cannot mutate persisted snapshot");Check(new ControllerLightDraft().Copy().SameConfiguration(new ControllerLightDraft()),"null arrays safe");
+  // The constructor is render-only: no monitoring, device requests or hooks. Only
+  // the page-builder flag is then changed; no window is shown and no apply is clicked.
+  var window=new MainWindow(true);typeof(MainWindow).GetField("render",Private).SetValue(window,false);typeof(MainWindow).GetField("busy",Private).SetValue(window,true);var live=new ControllerLightDraft{Port="1",Area="center",Effect="breathe",FanCounts=new[]{1,0,0,0},Brightness=100,Speed=60,Direction="forward",Colors=new[]{"#FF0080"}};typeof(MainWindow).GetField("controllerLightDraft",Private).SetValue(window,live);
+  var panel=new StackPanel();var state=Obj("firmware","synthetic","supportsLighting",true,"supportsTemperatureSources",true,"supportsDisconnectLightingChain",true,"effectCapabilities",new object[]{Obj("area","center","effect","breathe","colorCount",1,"hasSpeed",true,"hasDirection",true)},"temperatureSources",new object[]{Obj("sourceId","synthetic-source","name","合成温度来源","available",true)});typeof(MainWindow).GetMethod("OriginalControllerLightingPage",Private).Invoke(window,new object[]{panel,state});panel.Measure(new Size(900,1400));panel.Arrange(new Rect(0,0,900,1400));
+  var controls=Walk<Control>(panel).Where(c=>c is ComboBox||c is TextBox||c is Button||c is CheckBox).ToList();Check(controls.Count>=15&&controls.All(c=>!c.IsEnabled),"all editable controller controls disabled during request");var before=live.Copy();foreach(var input in controls.OfType<TextBox>())input.Text="#ABCDEF";foreach(var input in controls.OfType<ComboBox>())if(input.Items.Count>1)input.SelectedIndex=input.SelectedIndex==0?1:0;foreach(var input in controls.OfType<CheckBox>())input.IsChecked=true;Check(live.SameConfiguration(before),"stale programmatic events cannot mutate busy draft");
+  var sensors=(HashSet<string>)typeof(MainWindow).GetField("controllerSourceDraft",Private).GetValue(window);Check(!sensors.Contains("synthetic-source"),"busy temperature selection unchanged");
+  var lcd=new StackPanel();typeof(MainWindow).GetMethod("OriginalLcdMonitorEditor",Private).Invoke(window,new object[]{lcd,Obj("hardwareSensors",new object[]{Obj("id","synthetic-cpu","name","合成 CPU 温度")})});lcd.Measure(new Size(800,400));lcd.Arrange(new Rect(0,0,800,400));var lcdControls=Walk<Control>(lcd).Where(c=>c is Button||c is CheckBox).ToList();Check(lcdControls.Count==5&&lcdControls.All(c=>!c.IsEnabled),"LCD backgrounds and sensors disabled during request");foreach(var option in lcdControls.OfType<CheckBox>())option.IsChecked=true;var lcdSensors=(HashSet<string>)typeof(MainWindow).GetField("lcdSelectedSensors",Private).GetValue(window);Check(!lcdSensors.Contains("synthetic-cpu"),"busy LCD sensor event ignored");
+  var snapshots=(Dictionary<string,Dictionary<string,object>>)typeof(MainWindow).GetField("sdkSnapshots",Private).GetValue(window);snapshots["fan:7576"]=state;typeof(MainWindow).GetField("originalControllerTab",Private).SetValue(window,"Lighting Effect");Render(window,"device:fan","native-fan-busy.png");snapshots["lcd:7299"]=Obj("firmware","synthetic","powerS0",true,"hardwareSensors",new object[]{Obj("id","synthetic-cpu","name","合成 CPU 温度")});typeof(MainWindow).GetField("lcdMonitorMode",Private).SetValue(window,true);Render(window,"device:motherboard","native-lcd-busy.png");
+  Console.WriteLine("Native draft safety: "+checks+" checks passed. Synthetic data only; no worker calls or device writes.");app.Shutdown();
+ }
+}
