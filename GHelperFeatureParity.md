@@ -11,7 +11,7 @@
 - **未实现**：没有完整执行路径；研究过接口也仍算未实现。
 - **当前不可读**：合法查询没有提供可信数据，或被权限/接口限制；保持未知。
 
-移动设备的当前精确准备型号只有 RC71L、RC72LA、RC73YA、RC73XA、GA402RJ、GU605MI、FX507ZC4。每次读请求重新核实 ASUS 身份、移动机箱类型、精确型号和已签名 System Control Interface 驱动。未确认型号不发送 ATKACPI IOCTL。详情和 117 项纯测试见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。所有 NotebookWorker 写入均在 I/O 前拒绝；GUI 的实验性写入开关不会解除此限制。
+移动设备的当前精确准备型号只有 RC71L、RC72LA、RC73YA、RC73XA、GA402RJ、GU605MI、FX507ZC4。每次读请求重新核实 ASUS 身份、移动机箱类型、精确型号和已签名 System Control Interface 驱动。未确认型号不发送 ATKACPI IOCTL。工具页已接手动检测、超时隔离和未知状态显示；766 项 GUI 检查没有移动硬件调用。详情和 117 项工作进程纯测试见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。所有 NotebookWorker 写入均在 I/O 前拒绝；GUI 的实验性写入开关不会解除此限制。
 
 下表中的“已有 SCI”指用户机器已安装的 ASUS System Control Interface 内核驱动，并非 OpenAC 自带或新安装驱动。正常 SCI/HID 接口是否允许普通用户访问取决于已有驱动 ACL；不能因为 G-Helper 可调用，就保证任何环境都无需权限。PawnIO 是另外的低层驱动路径，不能混为 SCI。
 
@@ -127,7 +127,7 @@ G-Helper 这个固定版本包含多个各自的协议模型，不能只因为�
 | 鼠标 DPI 多档、颜色、X/Y、polling | PM | 局部实现：GearLinkWorker 的 Harpe II Extreme Edition20 精确协议 | 不覆盖 Chakram/Gladius/Keris/Pugio/Spatha/Strix/TUF/MD200 全部模型 |
 | Angle snapping/tuning、MotionSync、Lift-off | PM | 局部实现：现有 GearLink 精确已读字段/范围 | 只允许当前 capability；不能跨型号复制范围 |
 | 鼠标按键、shift层、自定义组合/启动动作 | PM | 局部实现：自有按键绑定 + MacroEngine；硬件宏/所有组合不完整 | 源布局/键值/命令和写后读回逐型号确认 |
-| 鼠标多灯区/动画/Aura同步 | PM | 未实现：当前键鼠没有RGB getter/setter；桌面 Aura 是独立设备 | G-Helper 多模型独有灯区/方向/随机色仍缺 |
+| 鼠标多灯区/动画/Aura同步 | PM | 局部准备：7546/7548 的 Logo 灯区 RGB getter/setter、软件模式读取及手动接管/交还；AuraSyncCoordinator 逐设备核实静态/关闭能力 | 本机只完成当前颜色读取，接管和颜色写入未实机验证；其他灯区/动画/型号仍缺 |
 | 鼠标 profile、电池、低电报警、休眠 | PM | 局部实现：当前精确设备 getter/setter准备 | 分别确认 RF/有线/接收器能力及实际数据 |
 | 鼠标恢复默认、校准、booster、旧代协议 | PM | 未实现全型号流程 | 校准/恢复不能由普通设置报文猜出 |
 | 外接键盘 profile、polling、低电/休眠 | PK | 局部实现：Azoth Extreme Edition20 的 GearLink 路径 | 未覆盖全部 Azoth/Claymore/Falchion/Scope/Flare/TUF 型号 |
@@ -148,7 +148,7 @@ G-Helper 这个固定版本包含多个各自的协议模型，不能只因为�
 | 主板 USB Aura | DirectAuraWorker 的9个精确 VID/PID 源准备、逻辑通道、4种已证实模式 | 不是笔记本/DRAM/VGA全生态；真实 ARGB 灯数、Gen1/Gen2仍未知 |
 | EURUX 风扇/灯效 | SDKWorker type32；4个控制器端口、PWM曲线/有校准范围时fixedRPM、201/202/104协议 | 不是 CPU/机箱/泵主板header；不做101校准；写后实物仍未验证 |
 | 主板 LCD51 | 7299/7124/7571源准备；电源/亮度/standby、8预设、JPEG上传/显式槽选择/删除、硬件监控配置 | 本型号 caps 禁自定义GIF；占用/空槽无getter；动画视频不能假接JPEG槽 |
-| 主板 Fan Xpert | FanModeWorker 已实现type50 GET0/1/12/13/16/17纯编码/严格解析及preset3草稿/门禁；84纯检查 | 正常调用者/SDK通路尚未合法验证；runtime断开；14仅枚举名未完整证明；不初始化/校准/stress，不声称功能可用 |
+| 主板 Fan Xpert | FanModeWorker 已实现type50 GET0/1/12/13/16/17纯编码/严格解析及preset3草稿/门禁；84纯检查 | 已获管理员许可的独立 COM 只读探针枚举八个 header 与五个 profile；此探针不是 GUI 通路，RPM/单位仍未证明。GUI MainSDK runtime 断开；不初始化/校准/stress，不声称模式实际可用 |
 | 主板电压/温度/风扇遥测 | 新 TelemetryWorker 隔离GET0/36；原始数据保留且不猜单位/身份 | 本机五项全0；ASUSManagement普通WMI实例AccessDenied；未找到可确认共享内存schema |
 
 ## 验收办法：怎样才算补齐和更好

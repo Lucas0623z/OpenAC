@@ -7,6 +7,7 @@ namespace RogControl {
  public partial class MainWindow {
   DispatcherTimer pageReadTimer;
   string pendingPageRead="";
+  string lastPageReadViewKey="";bool pendingPageReadMayPreserveDraft;
   bool pageReadRunning;
   readonly Dictionary<string,DateTime> pageReadAttempts=new Dictionary<string,DateTime>();
   void BeginPageReads() {
@@ -14,7 +15,7 @@ namespace RogControl {
    pageReadTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(400)};
    pageReadTimer.Tick+=async(s,e)=>{
     if(!IsLoaded||closing||busy||pageReadRunning||String.IsNullOrEmpty(pendingPageRead))return;
-    string target=pendingPageRead,key=PageReadKey(target);pendingPageRead="";if(key==null)return;
+    string target=pendingPageRead,key=PageReadKey(target);bool preserveDraft=pendingPageReadMayPreserveDraft;pendingPageRead="";if(key==null||preserveDraft&&PreserveLcdMonitorReadDraft(target))return;
     DateTime attempted;if(pageReadAttempts.TryGetValue(key,out attempted)&&(DateTime.UtcNow-attempted).TotalSeconds<10)return;
     pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=true;
     try{await ReadVisiblePage(target);}catch(Exception ex){if(!closing)Log("读取失败："+ex.Message);}finally{pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=false;}
@@ -24,13 +25,26 @@ namespace RogControl {
   string PageReadKey(string target) {
    if(target=="device:motherboard")return target+":"+originalMotherboardTab;
    if(target=="Windows 电源"||target=="屏幕设置"||target=="电池信息")return target;
-   return target=="设备"||target=="灯效 & Aura Sync"||target=="神光同步"||target=="device:keyboard"||target=="device:mouse"||target=="device:headset"||target=="device:fan"||target=="device:receiver"?target:null;
+   return target=="设备"||target=="设备兼容"||target=="灯效 & Aura Sync"||target=="神光同步"||target=="device:keyboard"||target=="device:mouse"||target=="device:headset"||target=="device:fan"||target=="device:receiver"?target:null;
   }
-  void QueuePageRead(string target){if(!render&&!closing&&PageReadKey(target)!=null)pendingPageRead=target;}
+  bool PreserveLcdMonitorReadDraft(string target){
+   if(target!="device:motherboard"||originalMotherboardTab!="5\" LCD Display"||!lcdMonitorMode)return false;
+   Dictionary<string,object> snapshot;if(!sdkSnapshots.TryGetValue("lcd:7299",out snapshot)||!lcdMonitorDraft.IsCurrent(snapshot))return false;
+   foreach(var row in lcdMonitorDraft.Rows)if(row.Category.HasValue||!String.IsNullOrEmpty(row.SensorId))return true;return false;
+  }
+  void QueuePageRead(string target){
+   string key=PageReadKey(target),viewKey=key??target;bool sameView=lastPageReadViewKey==viewKey;lastPageReadViewKey=viewKey;
+   if(render||closing||key==null)return;
+   // Editing re-renders must not clear IDs from a still-current read. Entering
+   // another view, returning to LCD, or losing the worker permits a fresh read.
+   if(sameView&&PreserveLcdMonitorReadDraft(target)){if(pendingPageRead==target&&pendingPageReadMayPreserveDraft)pendingPageRead="";return;}
+   bool entryAlreadyQueued=pendingPageRead==target&&!pendingPageReadMayPreserveDraft;
+   pendingPageRead=target;pendingPageReadMayPreserveDraft=!entryAlreadyQueued&&sameView;
+  }
   async Task ReadVisiblePage(string target) {
    if(target!=page||closing||render)return;
    switch(target) {
-    case "设备":await ReadOriginalDiscovery();break;
+    case "设备":case "设备兼容":await ReadOriginalDiscovery();break;
     case "Windows 电源":await ReadWindowsPower();break;
     case "屏幕设置":await ReadWindowsDisplay();break;
     case "电池信息":await ReadWindowsBattery();break;

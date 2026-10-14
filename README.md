@@ -12,7 +12,7 @@
 
 此开发分支进入设备页时自动读取状态。设备控制每次启动及预览重建默认关闭；需要应用设置时，在“更新库 → 设备控制”展开并开启“允许本次运行应用设备设置”，随后手动应用。页面刷新不自动应用配置或恢复宏播放。离线、未读回和本地草稿会分别标出；接口接受请求、设备读回相同和实体效果正常是不同结果，实体效果仍需实机验证。
 
-用户已选择继续保留 MIT，独立补齐 G-Helper 功能，不复制其 GPL 应用实现。固定版本的逐项功能、已实现部分和缺口见 [GHelperFeatureParity.md](GHelperFeatureParity.md)。ASUS 移动设备只读工作进程目前仅准备七个精确型号，未有笔记本或掌机实机验证，未提供曲线、功耗或电压写入，见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。官网 BIOS/驱动目录仅查询和提供下载链接，见 [Asus-Public-Catalog.md](Asus-Public-Catalog.md)。截图中七个项目的接口和许可研究见 [OpenSourceInterfaces.md](OpenSourceInterfaces.md)。
+用户已选择继续保留 MIT，独立补齐 G-Helper 功能，不复制其 GPL 应用实现。固定版本的逐项功能、已实现部分和缺口见 [GHelperFeatureParity.md](GHelperFeatureParity.md)。ASUS 移动设备只读工作进程及工具页目前仅准备七个精确型号，未有笔记本或掌机实机验证，未提供曲线、功耗或电压写入，见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。官网 BIOS/驱动目录仅查询和提供下载链接，见 [Asus-Public-Catalog.md](Asus-Public-Catalog.md)。截图中七个项目的接口和许可研究见 [OpenSourceInterfaces.md](OpenSourceInterfaces.md)。
 
 为保留前期本机预览的草稿，内部源码命名空间仍为 RogControl，本地游戏、宏、风扇名称和情境配置继续存于 `%LOCALAPPDATA%\ROG Control`。宏录制或播放需要用户显式启动；仅打开宏页面不会记录输入。停止、切换页面和关闭应用会取消播放，释放本应用按下的按键。
 
@@ -68,7 +68,7 @@
 
 ## 编译与测试
 
-源码目录的 `build-all.ps1` 编译应用、六个运行设备工作进程及移动/AIO遥测准备模块。`-RunChecks` 执行模拟测试；`-HardwareReadOnlyChecks` 额外查询本机主板、风扇控制器和 LCD。后者需要相应设备及原安装SDK。准备模块有独立协议门禁，不代表新增GUI完整硬件适配。外设只读回归工具为 `PeripheralReadOnlyTests.cs`。
+源码目录的 `build-all.ps1` 编译应用、七个运行设备工作进程及 AIO 遥测准备模块。`-RunChecks` 执行模拟测试；`-HardwareReadOnlyChecks` 额外查询本机主板、风扇控制器和 LCD。后者需要相应设备及原安装SDK。准备模块有独立协议门禁，不代表新增GUI完整硬件适配。外设只读回归工具为 `PeripheralReadOnlyTests.cs`。
 
 设备工作进程各自隔离，出错或超时不应卡住界面。此项目没有绕过 ASUS 受信任进程校验，也不复用已经重复崩溃的旧键鼠SDK路径。
 

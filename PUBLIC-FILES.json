@@ -67,7 +67,17 @@
     "WindowsDisplay.cs",
     "WindowsDisplayStructure.cs",
     "WindowsBattery.cs",
-    "WindowsBatteryStructure.cs"
+    "WindowsBatteryStructure.cs",
+    "NotebookStructure.cs",
+    "MousePerformanceStructure.cs",
+    "OriginalPixelLayout.cs",
+    "KeyboardKeysStructure.cs",
+    "KeyboardViewsStructure.cs",
+    "GearPowerStructure.cs",
+    "KeyboardLightingStructure.cs",
+    "HeadsetAudioStructure.cs",
+    "GameFirstStructure.cs",
+    "GpuLightingStructure.cs"
   ],
   "buildFiles": [
     "app.manifest",
@@ -111,7 +121,22 @@
     "WindowsDisplayTests.cs",
     "WindowsDisplayGuiTests.cs",
     "WindowsBatteryTests.cs",
-    "WindowsBatteryGuiTests.cs"
+    "WindowsBatteryGuiTests.cs",
+    "NotebookGuiTests.cs",
+    "MousePerformanceGuiTests.cs",
+    "OriginalPixelLayoutTests.cs",
+    "KeyboardViewsGuiTests.cs",
+    "GearPowerGuiTests.cs",
+    "KeyboardLightingGuiTests.cs",
+    "HeadsetAudioGuiTests.cs",
+    "MotherboardGuiTests.cs",
+    "LcdSettingsGuiTests.cs",
+    "LcdMonitorGuiTests.cs",
+    "GameLibraryGuiTests.cs",
+    "ReceiverGuiTests.cs",
+    "ScenarioGuiTests.cs",
+    "GameFirstGuiTests.cs",
+    "MacroGuiTests.cs"
   ],
   "documentationFiles": [
     "README.md",
@@ -148,7 +173,8 @@
     "TelemetryWorker-protocol.md",
     "WindowsPower-Implementation.md",
     "WindowsDisplay-Implementation.md",
-    "WindowsBattery-Implementation.md"
+    "WindowsBattery-Implementation.md",
+    "FanXpert-Interface-Research.md"
   ],
   "metadataFileMappings": [
     {
@@ -169,6 +195,7 @@
     "StorageWorker.exe",
     "AudioEndpointWorker.exe",
     "DiscoveryWorker.exe",
+    "NotebookWorker.exe",
     "DirectAuraWorker-LICENSE.txt",
     "README.md",
     "PUBLIC-RELEASE.md",
@@ -196,10 +223,10 @@
     "Mobile SCI preparation covers seven exact models without mobile hardware verification; battery WMI provider not physically tested on this desktop"
   ],
   "completedChecks": [
-    "Development core: 3163 pure checks passed, including explicit lighting-return state transfer; no native setters or shown test windows",
-    "UI: 50 page/tab states at 1538/1180 widths (100 unshown renders), plus 15 battery states at both widths (30 renders); zero horizontal overflow in audited states",
-    "Live preview: same host remains open, data-only restoration, default-off writes, guarded active actions and compiler-failure preservation",
-    "Real read-only: Windows/NVIDIA telemetry, four Windows power schemes and AC/DC Boost, two displays and refresh-rate candidates; desktop has no system battery; keyboard/mouse lighting getters",
-    "Published installer baseline remains unchanged; no new installer release and no real install/uninstall"
+    "Development core and GUI: 14871 synthetic checks passed with all workers and test sources rebuilt; no real setting writes or shown test windows",
+    "UI: real installed Armoury Crate window reviewed on the current 150% DPI desktop; 1180/1538/2560 hidden layouts checked where supported, with remaining blocked pages recorded in OriginalUiInventory.md",
+    "Live preview: seven staged workers, physical-size and data-only restoration, default-off writes, guarded active operations, startup/DPI transition snapshots and compiler-failure preservation",
+    "Real read-only: earlier Windows/NVIDIA telemetry, power and displays; approved bounded fan COM probe enumerated eight headers and five profiles without setters, without proving RPM or duty units",
+    "Unsigned local candidate only; public v0.3.0-preview Release unchanged; no real install/uninstall"
   ]
 }

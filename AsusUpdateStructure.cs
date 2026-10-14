@@ -20,6 +20,8 @@ namespace RogControl {
    var power=Button("Windows 电源",()=>ShowPage("Windows 电源"));power.HorizontalAlignment=HorizontalAlignment.Left;power.MinWidth=180;content.Children.Add(power);
    var display=Button("屏幕设置",()=>ShowPage("屏幕设置"));display.HorizontalAlignment=HorizontalAlignment.Left;display.MinWidth=180;content.Children.Add(display);
    var battery=Button("电池信息",()=>ShowPage("电池信息"));battery.HorizontalAlignment=HorizontalAlignment.Left;battery.MinWidth=180;content.Children.Add(battery);
+   OriginalNotebookToolEntry();
+   var compatibility=Button("设备兼容",()=>ShowPage("设备兼容"));compatibility.HorizontalAlignment=HorizontalAlignment.Left;compatibility.MinWidth=180;content.Children.Add(compatibility);
   }
 
   static int DefaultAsusCatalogOsId() {

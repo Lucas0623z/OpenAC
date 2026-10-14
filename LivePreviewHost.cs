@@ -25,18 +25,18 @@ internal sealed class LivePreviewHost {
  byte[] pendingAssembly;
  bool building,swapping,stopped;
  int reloads;
- static readonly string[] workers={"DirectAuraWorker.exe","SDKWorker.exe","GearLinkWorker.exe","StorageWorker.exe","AudioEndpointWorker.exe","DiscoveryWorker.exe"};
- LivePreviewHost(Application application) {
+ static readonly string[] workers={"DirectAuraWorker.exe","SDKWorker.exe","GearLinkWorker.exe","StorageWorker.exe","AudioEndpointWorker.exe","DiscoveryWorker.exe","NotebookWorker.exe"};
+ LivePreviewHost(Application application,bool startInactive) {
   app=application;previewFolder=Path.Combine(root,".preview");payload=Path.Combine(previewFolder,"payload.exe");
   Directory.CreateDirectory(previewFolder);
   currentRuntime=PrepareWorkers();
   AppDomain.CurrentDomain.SetData("OpenAC.PreviewWorkerRoot",currentRuntime);
   string resume=null,resumeFile=Path.Combine(previewFolder,"resume.json");
   if(File.Exists(resumeFile)&&new FileInfo(resumeFile).Length<=4194304)resume=File.ReadAllText(resumeFile);
-  try{current=NewWindow(File.ReadAllBytes(payload),false,resume);}catch{if(resume==null)throw;current=NewWindow(File.ReadAllBytes(payload),false,null);}
+  try{current=NewWindow(File.ReadAllBytes(payload),resume!=null,resume);}catch{if(resume==null)throw;current=NewWindow(File.ReadAllBytes(payload),false,null);}
   loadedHash=Hash(File.ReadAllBytes(payload));
   attemptedFingerprint=pendingFingerprint=SourceFingerprint();
-  AttachClose(current);app.MainWindow=current;current.Show();WriteStatus();
+  AttachClose(current);app.MainWindow=current;current.ShowActivated=!startInactive;current.Show();WriteStatus();
   timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(500)};
   timer.Tick+=async(s,e)=>await Tick();timer.Start();
  }
@@ -141,7 +141,7 @@ internal sealed class LivePreviewHost {
   if(arguments.Length>0&&arguments[0]=="--verify-state")return VerifyState();
   bool owns;using(var mutex=new Mutex(true,"Local\\ROGControl-0.1",out owns)) {
    if(!owns){MessageBox.Show("OpenAC 已在运行，请先关闭已有窗口。","OpenAC");return 1;}
-   try{new LivePreviewHost(app);app.Run();return 0;}catch(Exception ex){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".preview","host.log"),Unwrap(ex).ToString());return 1;}
+   try{new LivePreviewHost(app,Array.IndexOf(arguments,"--no-activate")>=0);app.Run();return 0;}catch(Exception ex){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".preview","host.log"),Unwrap(ex).ToString());return 1;}
   }
  }
  static int VerifyState() {

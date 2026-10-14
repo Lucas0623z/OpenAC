@@ -175,6 +175,20 @@ A bounded read-only timing on 2026-10-13 found fresh-worker scan 3973 ms and rea
 
 ## LCD setters
 
+The independently implemented monitor editor binds sensor IDs to the exact
+confirmed capability snapshot and live `WorkerClient.SessionIdentity`. It
+checks the capability fingerprint, complete ordered selections and distinct
+sensor identities before applying. The optional expected-session request is
+checked under the worker queue lock both before and after startup; an expired
+binding cannot trigger an automatic restart and submit old IDs. Hot preview
+replacement retains only mode, preset, background and information count, then
+discards the cached LCD snapshot and selections until a fresh read. This GUI
+binding does not add native commands or change the worker packet format.
+
+While a bound monitor draft is being edited, its same-page redraws do not queue
+another read that would clear the selections. Returning from another page or
+tab, or losing the live binding, keeps the ordinary fresh-read path available.
+
 ```json
 {"id":8,"op":"set","kind":"lcd","deviceId":"7299","setting":"powerS0","value":true}
 {"id":9,"op":"set","kind":"lcd","deviceId":"7299","setting":"powerS5","value":false}

@@ -6,7 +6,7 @@
 
 `PUBLIC-FILES.json` 按文件列出 C#、构建脚本、测试源码、协议说明和许可材料。打包只使用这份清单，不递归复制开发目录。脚本拒绝覆盖已有工件，检查目标位于项目内，预检输入后建立目录；文件、ZIP 和安装包均记录 SHA256。
 
-公开预览保留源码供重建。应用和六个工作进程来自明确源码清单，不附 ASUS DLL、驱动、网页模块或 Windows/.NET 系统程序集。LCD / 风扇仍依赖用户本机已安装的 `ArmouryAIOSDK.dll` / `OmapboxSDK.dll`，目前不能宣传为完全脱离 Armoury 环境运行。
+公开预览保留源码供重建。已发布 0.3 的应用和六个工作进程来自明确源码清单；当前开发候选加上只读 NotebookWorker，共七个工作进程，仍来自明确源码清单，不附 ASUS DLL、驱动、网页模块或 Windows/.NET 系统程序集。LCD / 风扇仍依赖用户本机已安装的 `ArmouryAIOSDK.dll` / `OmapboxSDK.dll`，目前不能宣传为完全脱离 Armoury 环境运行。
 
 安装器使用本项目新写的 C# / Windows 接口；源码、明确载荷清单和构建说明放在 `source/installer`。目标为当前用户程序目录，配置保留于 `%LOCALAPPDATA%\ROG Control`。验证模式仅核对载荷，不安装。详细行为与测试见 `installer/README.md`。程序和安装器没有签名证书；哈希是完整性检查，不是发布者签名。
 

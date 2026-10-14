@@ -17,7 +17,7 @@ namespace RogControl {
    public readonly List<MonitorRowView> Items=new List<MonitorRowView>();
   }
   sealed class MonitorRowView {
-   public string Key;
+   public string Key,Group;
    public Grid Root;
    public TextBlock Name,Value;
    public Border Track,Fill;
@@ -32,28 +32,25 @@ namespace RogControl {
   Border OriginalMonitoringLayout(bool expanded) {
    dynamicMonitorCards.Clear();
    var stack=new StackPanel();
-   var heading=Label("系统监控",expanded?20:18,text,FontWeights.SemiBold);
-   heading.Margin=new Thickness(0,0,0,expanded?18:14);
-   if(!expanded) {
-    heading.Cursor=System.Windows.Input.Cursors.Hand;
-    heading.MouseLeftButtonUp+=(s,e)=>ShowPage("系统监控");
-   }
-   stack.Children.Add(heading);
+   var heading=Label("系统监控",expanded?20:16,text,FontWeights.Normal);
+   heading.Margin=new Thickness(0,0,0,expanded?18:10);
+   stack.Children.Add(expanded?(UIElement)heading:OriginalSectionHeading("系统监控"));
+   if(!expanded){var section=(FrameworkElement)stack.Children[0];section.Margin=new Thickness(0,0,0,10);section.Cursor=System.Windows.Input.Cursors.Hand;section.MouseLeftButtonUp+=(s,e)=>ShowPage("系统监控");}
    var top=new Grid();top.ColumnDefinitions.Add(new ColumnDefinition());top.ColumnDefinitions.Add(new ColumnDefinition());
    var frequency=CreateMonitorCard("Frequency","频率",expanded);frequency.Margin=new Thickness(0,0,expanded?25:7,0);top.Children.Add(frequency);
    var temperature=CreateMonitorCard("Temperature","温度",expanded);temperature.Margin=new Thickness(expanded?25:7,0,0,0);Grid.SetColumn(temperature,1);top.Children.Add(temperature);
    stack.Children.Add(top);
-   var bottom=new Grid{Margin=new Thickness(0,expanded?42:14,0,0)};for(int i=0;i<3;i++)bottom.ColumnDefinitions.Add(new ColumnDefinition());
+   var bottom=new Grid{Margin=new Thickness(0,expanded?42:16,0,0)};for(int i=0;i<3;i++)bottom.ColumnDefinitions.Add(new ColumnDefinition());
    var usage=CreateMonitorCard("Usage","使用率",expanded);usage.Margin=new Thickness(0,0,expanded?18:6,0);bottom.Children.Add(usage);
    var fans=CreateMonitorCard("Fans","风扇",expanded);fans.Margin=new Thickness(expanded?18:6,0,expanded?18:6,0);Grid.SetColumn(fans,1);bottom.Children.Add(fans);
    var voltage=CreateMonitorCard("Voltage","电压",expanded);voltage.Margin=new Thickness(expanded?18:6,0,0,0);Grid.SetColumn(voltage,2);bottom.Children.Add(voltage);
    stack.Children.Add(bottom);UpdateDynamicMonitorCards();
-   return new Border{Child=stack,Background=Brush("#00000000"),Margin=new Thickness(0,0,0,16)};
+   return new Border{Child=stack,Background=Brush("#00000000"),Margin=new Thickness(0,0,0,expanded?16:25)};
   }
 
   Border CreateMonitorCard(string group,string title,bool expanded) {
    var layout=new Grid();layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});layout.RowDefinitions.Add(new RowDefinition());
-   var heading=Label(title,expanded?30:22,text,FontWeights.Normal);heading.Margin=new Thickness(0,0,0,expanded?9:8);layout.Children.Add(heading);
+   var heading=Label(title,expanded?30:28,text,FontWeights.Normal);heading.Margin=new Thickness(0,0,0,expanded?9:2);layout.Children.Add(heading);
    var rows=new StackPanel();
    var scroll=new ScrollViewer{Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,CanContentScroll=false,Padding=new Thickness(0,0,3,0),Focusable=true};
    scroll.Resources.Add(typeof(ScrollBar),MonitorScrollBarStyle());
@@ -61,7 +58,7 @@ namespace RogControl {
    var view=new MonitorCardView{Group=group,Rows=rows,Scroll=scroll,Expanded=expanded};dynamicMonitorCards[group]=view;
    // Each sensor group has its own viewport, so adding a GPU or CPU core
    // never increases the dashboard height or moves the system showcase.
-   return new Border{Child=layout,Height=expanded?(group=="Frequency"||group=="Temperature"?330:300):190,Padding=new Thickness(expanded?6:8,0,expanded?6:8,0),Background=Brush("#00000000")};
+   return new Border{Child=layout,Height=expanded?(group=="Frequency"||group=="Temperature"?330:300):(group=="Frequency"||group=="Temperature"?215:205),Padding=new Thickness(expanded?6:0,0,expanded?6:0,0),Background=Brush("#00000000")};
   }
 
   static Style MonitorScrollBarStyle() {
@@ -101,7 +98,7 @@ namespace RogControl {
     if(rebuild) {
      double offset=card.Scroll.VerticalOffset;card.Rows.Children.Clear();card.Items.Clear();
      foreach(var reading in present) {
-      var row=CreateMonitorRow(card.Expanded);row.Key=reading.Key??reading.Name;card.Items.Add(row);card.Rows.Children.Add(row.Root);
+      var row=CreateMonitorRow(card.Expanded);row.Group=card.Group;row.Key=reading.Key??reading.Name;card.Items.Add(row);card.Rows.Children.Add(row.Root);
      }
      card.Scroll.ScrollToVerticalOffset(offset);
     }
@@ -125,12 +122,13 @@ namespace RogControl {
    bool confirmed=reading.Confirmed&&MonitorFinite(reading.Value)&&age.TotalSeconds>=-5&&age.TotalSeconds<=(reading.Quality=="configured"?90:15);
    row.Name.Text=reading.Name;row.Name.ToolTip=String.IsNullOrWhiteSpace(reading.DeviceName)?reading.Name:reading.Name+" · "+reading.DeviceName;
    string suffix=String.IsNullOrWhiteSpace(reading.Unit)?"":" "+reading.Unit.Trim();
-   string format=reading.Unit=="V"?"0.###":reading.Unit=="MHz"||reading.Unit=="MT/s"||reading.Unit=="RPM"?"0":"0.##";
+   string format=reading.Name=="CPU BCLK"?"0.###########":reading.Unit=="V"?"0.###":reading.Unit=="MHz"||reading.Unit=="MT/s"||reading.Unit=="RPM"?"0":"0.##";
    row.Value.Text=(confirmed?reading.Value.Value.ToString(format,CultureInfo.InvariantCulture):"—")+suffix;
    row.Value.ToolTip=reading.Quality=="osEstimate"?"Windows 估算":reading.Quality=="configured"?"配置速率":reading.Source;
    row.Value.Foreground=confirmed&&reading.Unit=="%"&&reading.Value.Value>=100?Brush("#FF1515"):muted;
    bool bounded=confirmed&&!String.IsNullOrWhiteSpace(reading.Source)&&MonitorFinite(reading.Min)&&MonitorFinite(reading.Max)&&reading.Max.Value>reading.Min.Value;
-   row.Track.Visibility=bounded?Visibility.Visible:Visibility.Collapsed;
+   bool progressSlot=(row.Group=="Frequency"&&(reading.Name=="CPU"||reading.Name=="CPU BCLK"))||(row.Group=="Temperature"&&(reading.Name=="CPU"||reading.Name=="CPU Package"));
+   row.Track.Visibility=progressSlot?Visibility.Visible:Visibility.Collapsed;row.Fill.Visibility=bounded&&progressSlot?Visibility.Visible:Visibility.Collapsed;
    row.Fraction=bounded?Math.Max(0,Math.Min(1,(reading.Value.Value-reading.Min.Value)/(reading.Max.Value-reading.Min.Value))):0;
    row.Fill.Width=Math.Max(0,row.Track.ActualWidth*row.Fraction);
   }

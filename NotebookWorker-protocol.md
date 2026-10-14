@@ -84,4 +84,6 @@ Presence masks and selected endpoint facts were cross-checked against [Linux asu
 
 ## Validation
 
+The GUI exposes a manual **Tools → 笔记本与掌机 → 检测设备** entry. It requests identity first and reads only the fixed status features for an eligible model. Rendering, navigating, and the one-second expiry timer make no notebook query. Observations expire after 30 seconds; unknown query bits are not labelled as the configured BIOS mode, GPU mode, or charge limit. `NotebookGuiTests.cs` adds 766 fake-backend checks and 26 unshown layouts. GUI cancellation and timeout quarantine share a stable AppDomain request gate across preview assemblies. NotebookWorker is the seventh installed runtime worker; staging it does not imply mobile hardware verification.
+
 `NotebookWorkerTests.cs` uses injected identities and fake native responses only. It exercises desktop/non-ASUS/unknown/ambiguous model rejection, all enclosure gates, driver gating, refreshed identity snapshots, exact DSTS fields, unsupported responses, bounds and flag parsing, mode-status uncertainty, write/arbitrary-command rejection, fail-fast driver errors, timeout quarantine and late-completion prevention. Initial suite: **117 checks passed**; WMI queries 0, ATKACPI opens 0, hardware writes 0. Runtime validation on this desktop should report an ineligible mobile gate and perform no ASUS IOCTL.

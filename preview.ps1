@@ -1,4 +1,4 @@
-param([switch]$VerifyOnly,[string]$HostName='OpenAC.PreviewHost.exe')
+param([switch]$VerifyOnly,[switch]$StartInactive,[string]$HostName='OpenAC.PreviewHost.exe')
 $ErrorActionPreference = 'Stop'
 $previewFolder = Join-Path $PSScriptRoot '.preview'
 New-Item -ItemType Directory -Path $previewFolder -Force | Out-Null
@@ -15,6 +15,7 @@ if ($VerifyOnly) {
  if ($process.ExitCode -ne 0) { throw 'Live preview state verification failed; inspect .preview/verify-state-error.txt.' }
  Get-Content -LiteralPath (Join-Path $previewFolder 'verify-state.json')
 } else {
- $process = Start-Process -FilePath $previewHost -WorkingDirectory $PSScriptRoot -PassThru
+ if ($StartInactive) { $process = Start-Process -FilePath $previewHost -ArgumentList '--no-activate' -WorkingDirectory $PSScriptRoot -PassThru }
+ else { $process = Start-Process -FilePath $previewHost -WorkingDirectory $PSScriptRoot -PassThru }
  Write-Output ('Live preview started. PID ' + $process.Id)
 }

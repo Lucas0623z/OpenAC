@@ -16,14 +16,28 @@ namespace RogControl {
   string gearMessage="";
   string headsetAudioTab="均衡器";
   void OriginalGearDevicePage(string kind) {
+   Dictionary<string,object> state;gearStates.TryGetValue(kind,out state);var snapshot=GearMap(state,"snapshot");bool fullWidthGear=kind=="mouse"||kind=="keyboard"||kind=="headset";
    string title=kind=="headset"?"ROG 棱镜 2-KJP":kind=="mouse"?"ROG HARPE II EXTREME EDITION 20":"ROG 夜魔 EXTREME 二十周年版";
-   Header(title,"");
+   if(fullWidthGear)OriginalGearProfileHeader(title,kind,state);else Header(title,"");
    string[] tabs=kind=="headset"?new[]{"音效","麦克风","设置","灯光","电量","奥创极速网页版","固件更新"}:kind=="mouse"?new[]{"按键","性能","灯光","校准","电量","Zone 模式","奥创极速网页版","固件更新"}:new[]{"按键","拨杆","OLED","灯光","电量","奥创极速网页版","性能","固件更新"};
-   string current;if(!gearTabs.TryGetValue(kind,out current))current=tabs[0];if(current=="控制旋钮")current="拨杆";if(current=="Zone Mode")current="Zone 模式";var tabRow=new WrapPanel{Margin=new Thickness(0,0,0,22)};
-   foreach(string name in tabs){string target=name;var tab=Button(name,()=>{gearTabs[kind]=target;ShowPage(page);});tab.Foreground=target==current?accent:muted;tab.BorderThickness=new Thickness(0,0,0,target==current?2:0);tab.BorderBrush=accent;tab.Background=System.Windows.Media.Brushes.Transparent;tab.Margin=new Thickness(0,0,14,0);tabRow.Children.Add(tab);}content.Children.Add(tabRow);
-   Dictionary<string,object> state;gearStates.TryGetValue(kind,out state);var snapshot=GearMap(state,"snapshot");
+   string current;if(!gearTabs.TryGetValue(kind,out current))current=tabs[0];if(current=="控制旋钮")current="拨杆";if(current=="Zone Mode")current="Zone 模式";Panel tabRow=fullWidthGear?(Panel)new StackPanel{Orientation=Orientation.Horizontal}:new WrapPanel{Margin=new Thickness(0,0,0,22)};
+   foreach(string name in tabs){string target=name;var tab=Button(name,()=>{gearTabs[kind]=target;ShowPage(page);});tab.Foreground=target==current?accent:muted;tab.BorderThickness=new Thickness(0,0,0,target==current?2:0);tab.BorderBrush=accent;tab.Background=fullWidthGear&&target==current?Brush("#211E16"):System.Windows.Media.Brushes.Transparent;tab.Margin=new Thickness(0,0,fullWidthGear?0:14,0);if(fullWidthGear){tab.Width=183;tab.Height=42;tab.FontSize=15;tab.Padding=new Thickness(8,7,8,7);}tabRow.Children.Add(tab);}
+   if(fullWidthGear)content.Children.Add(MouseTabStrip(tabRow,tabs,current));else content.Children.Add(tabRow);
+   PinPageHeader(fullWidthGear?2:3,"device:"+kind+":"+current);
    string deviceStatus=state==null?(busy?"正在加载…":gearMessage.IndexOf("失败",StringComparison.Ordinal)>=0||gearMessage.IndexOf("未完成",StringComparison.Ordinal)>=0?"加载失败":""):GearOnline(state)?"":"设备未连接";
-   if(deviceStatus.Length>0)content.Children.Add(Label(deviceStatus,12,muted));
+   if(deviceStatus.Length>0){status.Text=deviceStatus;status.ToolTip=gearMessage;}
+   if(current=="性能"&&kind=="mouse"){OriginalMousePerformancePage(content,state);return;}
+   if(current=="按键"&&kind=="keyboard"){OriginalKeyboardKeysPage(content,state);return;}
+   if(current=="拨杆"&&kind=="keyboard"){OriginalKeyboardLeverPage(content,state);return;}
+   if(current=="OLED"&&kind=="keyboard"){OriginalKeyboardOledPage(content,state);return;}
+   if(current=="电量"&&(kind=="keyboard"||kind=="mouse"||kind=="headset")){OriginalGearPowerPage(content,kind,state);return;}
+   if(current=="性能"&&kind=="keyboard"){OriginalKeyboardPollingPage(content,state);return;}
+   if(current=="灯光"&&kind=="keyboard"){OriginalKeyboardLightingPage(content,state);return;}
+   if(current=="灯光"&&kind=="headset"){OriginalHeadsetLightingPage(content,state);return;}
+   if(current=="音效"&&kind=="headset"){OriginalHeadsetAudioPage(content,state);return;}
+   if(current=="麦克风"&&kind=="headset"){OriginalHeadsetMicrophonePage(content,state);return;}
+   if(current=="设置"&&kind=="headset"){OriginalHeadsetSettingsPage(content,state);return;}
+   if(current=="固件更新"){OriginalGearFirmware(content,kind,state);return;}
    var body=new Grid{Margin=new Thickness(0,26,0,0)};body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(30,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(30)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(70,GridUnitType.Star)});
    var left=new StackPanel();left.Children.Add(OriginalInstalledImage(OriginalProductImage(kind),270,290));
    var right=new StackPanel();Grid.SetColumn(right,2);body.Children.Add(left);body.Children.Add(right);content.Children.Add(body);
@@ -33,11 +47,6 @@ namespace RogControl {
     right.Children.Add(Label("电池电量",18,text));right.Children.Add(Label(GearNumber(snapshot,"batteryPercent"," %"),34,accent));if(OriginalStateFlag(snapshot,"charging")==true)right.Children.Add(Label("正在充电",13,muted));
     AddGearMappedChoice(right,kind,state,"sleepMinutes","睡眠模式",kind=="headset"?new[]{"2","3","5","10","15","永不"}:new[]{"1","2","3","5","10","永不"},kind=="headset"?new[]{2,3,5,10,15,0}:new[]{1,2,3,5,10,0});
     AddGearMappedChoice(right,kind,state,"lowBatteryThreshold","低电量提示",new[]{"永不","10%","20%","30%","40%","50%"},new[]{0,10,20,30,40,50});if(kind=="headset")AddGearFlag(right,kind,state,"lowBatteryVoicePrompt","低电量语音提示");return;
-   }
-   if(current=="性能"&&kind=="mouse") {
-    AddGearChoice(right,kind,state,"pollingRate","轮询率（Hz）",new[]{"125","250","500","1000","2000","4000","8000"});
-    var dpi=GearArray(snapshot,"dpiStages");for(int i=0;i<4;i++){int index=i;AddGearNumber(right,kind,state,"dpiStage"+(i+1),"DPI "+(i+1),100,65000,dpi!=null&&i<dpi.Length?dpi[i]:null,async value=>await SetGearSetting(kind,state,"dpiStage",new Dictionary<string,object>{{"index",index},{"dpi",value}}));}
-    AddGearChoice(right,kind,state,"activeDpiStage","当前 DPI 档位",new[]{"1","2","3","4"});AddGearFlag(right,kind,state,"angleSnapping","直线修正");AddGearFlag(right,kind,state,"motionSync","Motion Sync");AddGearNumber(right,kind,state,"angleTuning","角度调节（°）",-30,30);return;
    }
    if(current=="性能"&&kind=="keyboard") {AddGearChoice(right,kind,state,"pollingRate","轮询率",new[]{"1000","8000"});return;}
    if(current=="音效"&&kind=="headset") {

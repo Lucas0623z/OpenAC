@@ -49,3 +49,33 @@ between byte-loaded assemblies. Caller timeout does not release an unfinished
 provider query. Battery snapshots expire after 30 seconds and ordinary monitor
 readings after 15 seconds. Developer-only `.preview/assets.json` can point
 `productImageRoot` at existing official PNGs; that path and the images are private.
+
+The host now stages seven workers, including NotebookWorker. `-StartInactive`
+opens the restored preview without asking WPF to activate it. Changed host code
+still requires a normal host restart. A single-instance mutex prevents two live
+hosts from editing the shared preview state.
+
+Window geometry is saved as physical pixel dimensions with a layout version.
+Old snapshots migrate from their authored logical dimensions once; repeated
+reloads use absolute dimensions and never compound the DPI correction. Only
+OpenAC's own root receives an inverse scale. The current 150% desktop DPI was
+observed through the real preview window; 100/125/150/200% and repeated restores
+also have 2054 unshown size and startup-phase checks. Startup/DPI-transition snapshots preserve the restored physical target until layout settles. Fixed page headers remain separate from the
+scrolling body, while overflowing device tabs scroll horizontally.
+
+Keyboard OLED/lever, mouse performance, and power-setting drafts travel as data
+only. Active applies delay replacement; restored drafts must still match the
+device and supported range. Hardware permission is never restored. Notebook
+queries are manual, single-batch, bounded and quarantined on timeout; the expiry
+timer only removes stale display values. Cached firmware checks and headset
+subpages also survive replacement without starting queries or updates.
+
+LCD view mode, built-in preset, background and information count survive a
+replacement. Its sensor selections and cached LCD capabilities do not: opaque
+sensor IDs are rebound only after a fresh read from the new worker. Applying a
+monitor draft checks that same live process session inside the request queue;
+an expired session never silently restarts a worker to send the old IDs. The
+same-page rendering of an active monitor draft also pauses automatic rereads;
+returning to LCD from another view or losing the session permits a fresh read.
+The settings popup keeps single-field actions separate; its unimplemented aggregate
+Save, warning and sleeping-wallpaper controls remain disabled.

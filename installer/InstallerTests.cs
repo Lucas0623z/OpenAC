@@ -29,6 +29,7 @@ internal static class InstallerTests {
             Check(InstallerCore.Product == "org.openac.community.preview", "Unexpected product identity.");
             Check(InstallerCore.RuntimeFiles.Contains("OpenAC.exe") && InstallerCore.RuntimeFiles.Contains("OpenAC.exe.config"), "Missing public runtime executable names.");
             Check(!InstallerCore.RuntimeFiles.Contains("RogControl.exe"), "Legacy executable is still whitelisted.");
+            Check(InstallerCore.RuntimeFiles.Contains("NotebookWorker.exe"), "Notebook GUI requires its isolated status worker in the installer.");
             Check(InstallerCore.DefaultDirectory == Path.Combine(InstallerCore.Programs, "OpenAC"), "Unexpected default directory.");
         });
         TestPaths();

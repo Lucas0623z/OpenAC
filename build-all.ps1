@@ -130,6 +130,16 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Windows battery UI checks build failed.' }
  & (Join-Path $PSScriptRoot 'WindowsBatteryGuiTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Windows battery UI checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'NotebookGuiTests.exe')) (Join-Path $PSScriptRoot 'NotebookGuiTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks build failed.' }
+ & (Join-Path $PSScriptRoot 'NotebookGuiTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks failed.' }
+ foreach ($taskGuiTest in @('MousePerformanceGuiTests','OriginalPixelLayoutTests','GearPowerGuiTests','KeyboardViewsGuiTests','KeyboardLightingGuiTests','HeadsetAudioGuiTests','MotherboardGuiTests','LcdSettingsGuiTests','LcdMonitorGuiTests','GameLibraryGuiTests','ReceiverGuiTests','ScenarioGuiTests','GameFirstGuiTests','MacroGuiTests')) {
+  & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot ($taskGuiTest + '.exe'))) (Join-Path $PSScriptRoot ($taskGuiTest + '.cs'))
+  if ($LASTEXITCODE -ne 0) { throw ($taskGuiTest + ' build failed.') }
+  & (Join-Path $PSScriptRoot ($taskGuiTest + '.exe'))
+  if ($LASTEXITCODE -ne 0) { throw ($taskGuiTest + ' failed.') }
+ }
 }
 if ($HardwareReadOnlyChecks) {
  & (Join-Path $PSScriptRoot 'ReadOnlyIntegrationTests.exe')

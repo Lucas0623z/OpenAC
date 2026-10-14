@@ -14,46 +14,47 @@ namespace RogControl {
   const string OriginalLcdAssets=@"C:\Program Files (x86)\ASUS\ArmouryDevice\View\E7C8DA76-C9B9-4297-8681-DD878330AFE7\resources\src\pages\lcd\common\images\5\img_or_anim";
 
   void OriginalMotherboardPage() {
-   var title=Label("ROG CROSSHAIR X870E EXTREME",24,text,FontWeights.SemiBold);title.Margin=new Thickness(0,0,0,24);content.Children.Add(title);
-   var tabs=new Grid();for(int i=0;i<4;i++)tabs.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+   var titleRow=new Grid{Height=34,Margin=new Thickness(15,0,0,23)};var title=Label("ROG CROSSHAIR X870E EXTREME",24,text);title.Margin=new Thickness(0);title.VerticalAlignment=VerticalAlignment.Center;titleRow.Children.Add(title);content.Children.Add(titleRow);
+   var tabs=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(-22,0,-22,0)};
    string[] names={"5\" LCD Display","可编程接针","磁盘信息","ASUS WiFi Q-Antenna"};
    for(int i=0;i<names.Length;i++) {
-    string tab=names[i];var button=Button(tab,()=>{originalMotherboardTab=tab;ShowPage(page);});button.Margin=new Thickness(0,0,28,0);button.Padding=new Thickness(0,0,0,13);button.Background=Brush("#00000000");button.BorderBrush=Brush("#00000000");button.FontSize=14;
-    var template=new ControlTemplate(typeof(Button));var frame=new FrameworkElementFactory(typeof(Border));frame.SetValue(Border.PaddingProperty,new Thickness(0,0,0,13));frame.SetValue(Border.BorderThicknessProperty,new Thickness(0,0,0,2));frame.SetValue(Border.BorderBrushProperty,originalMotherboardTab==tab?accent:Brush("#00000000"));frame.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));template.VisualTree=frame;button.Template=template;Grid.SetColumn(button,i);tabs.Children.Add(button);
+    string tab=names[i];bool active=originalMotherboardTab==tab;var button=Button(tab,()=>{originalMotherboardTab=tab;ShowPage(page);});button.Width=183;button.Height=42;button.Margin=new Thickness(0);button.Padding=new Thickness(8,7,8,7);button.Background=active?Brush("#1D2021"):Brushes.Transparent;button.BorderBrush=tab=="磁盘信息"?Brush("#CB2C45"):Brush("#258CB4");button.BorderThickness=new Thickness(0,0,0,active?2:0);button.FontSize=15;tabs.Children.Add(button);
    }
-   content.Children.Add(tabs);content.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(0,0,0,25)});
+   content.Children.Add(tabs);PinPageHeader(2,"motherboard:"+originalMotherboardTab);
    if(originalMotherboardTab=="磁盘信息"){OriginalStoragePage();return;}
    if(originalMotherboardTab=="可编程接针"){OriginalBoardArgbPage(content);return;}
    if(originalMotherboardTab!="5\" LCD Display") {
-    content.Children.Add(Paragraph("功能暂不可用",13,muted));return;
+    OriginalMotherboardAntennaUnavailable();return;
    }
    Dictionary<string,object> snapshot;sdkSnapshots.TryGetValue("lcd:7299",out snapshot);
-   var body=new Grid();body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(40,GridUnitType.Star)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(28)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(60,GridUnitType.Star)});
+   var body=new Grid{Margin=new Thickness(35,54,21,0)};body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(450)});body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(38)});body.ColumnDefinitions.Add(new ColumnDefinition());
    var left=new StackPanel();var right=new StackPanel();Grid.SetColumn(right,2);body.Children.Add(left);body.Children.Add(right);
-   var powerRow=new Grid();powerRow.ColumnDefinitions.Add(new ColumnDefinition());powerRow.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+   var powerRow=new Grid{Margin=new Thickness(0,4,0,0)};powerRow.ColumnDefinitions.Add(new ColumnDefinition());powerRow.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
    bool? power=OriginalStateFlag(snapshot,"powerS0");
    var toggle=new Border{Width=62,Height=29,CornerRadius=new CornerRadius(15),Background=power==true?accent:Brush("#303030"),HorizontalAlignment=HorizontalAlignment.Left,Child=new TextBlock{Text=power.HasValue?(power.Value?"ON":"OFF"):"—",Foreground=power==true?Brush("#151515"):muted,FontSize=12,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};
    toggle.ToolTip="点击切换屏幕电源";toggle.IsEnabled=HardwareWritesEnabled&&power.HasValue&&!busy;toggle.Cursor=System.Windows.Input.Cursors.Hand;toggle.MouseLeftButtonUp+=async(s,e)=>{if(power.HasValue&&!busy)await SetOriginalNative("lcd","7299","powerS0",new Dictionary<string,object>{{"value",!power.Value}});};powerRow.Children.Add(toggle);
-   var gear=Button("⚙",OpenLcdSettings);gear.IsEnabled=snapshot!=null&&!busy&&!render;gear.FontSize=18;gear.Padding=new Thickness(7,2,7,2);gear.Margin=new Thickness(0);gear.ToolTip="亮度、关机电源与待机设置";Grid.SetColumn(gear,1);powerRow.Children.Add(gear);left.Children.Add(powerRow);
-   var display=new Border{Width=169,Height=301,Background=Brush("#090909"),BorderBrush=Brush("#454545"),BorderThickness=new Thickness(2),CornerRadius=new CornerRadius(4),Margin=new Thickness(0,22,0,15),HorizontalAlignment=HorizontalAlignment.Center};
-   if(lcdSelectedPreset.HasValue&&!lcdMonitorMode)display.Child=OriginalInstalledImage(LcdPresetPath(lcdSelectedPreset.Value),165,297);left.Children.Add(display);
-   var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,0,21)};
-   var applyContent=Button("应用",ApplyLcdDraft);applyContent.IsEnabled=lcdMonitorMode?LcdWritable(snapshot,"hardwareMonitorWritable"):lcdSelectedPreset.HasValue&&LcdWritable(snapshot,"presetWritable");var resetDraft=Button("默认",()=>{lcdSelectedPreset=0;lcdMonitorMode=false;ShowPage(page);});resetDraft.ToolTip="选择默认预设，点击应用后显示";foreach(var button in new[]{applyContent,resetDraft}){button.MinWidth=74;button.Padding=new Thickness(12,7,12,7);button.Margin=new Thickness(9,0,0,0);actions.Children.Add(button);}right.Children.Add(actions);
-   var modes=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,16)};
-   var imagesMode=new RadioButton{Content="Image & Exclusive Animation",Foreground=text,FontSize=13,IsChecked=!lcdMonitorMode,Margin=new Thickness(0,0,25,0)};imagesMode.Checked+=(s,e)=>{lcdMonitorMode=false;ShowPage(page);};modes.Children.Add(imagesMode);var monitorMode=new RadioButton{Content="硬件监控",Foreground=text,FontSize=13,IsChecked=lcdMonitorMode};monitorMode.Checked+=(s,e)=>{lcdMonitorMode=true;ShowPage(page);};modes.Children.Add(monitorMode);right.Children.Add(modes);
-   if(lcdMonitorMode){OriginalLcdMonitorEditor(right,snapshot);content.Children.Add(body);return;}
-   var instructions=Paragraph("支持 JPEG 文件，大小不超过 64 MB。",11,muted);instructions.Margin=new Thickness(0,0,0,13);right.Children.Add(instructions);
+   var gear=Button("☷",OpenLcdSettings);gear.IsEnabled=!busy&&!closing&&!render;gear.FontSize=18;gear.Padding=new Thickness(7,2,7,2);gear.Margin=new Thickness(0,0,26,0);gear.Background=Brushes.Transparent;gear.BorderThickness=new Thickness(0);gear.ToolTip="设置";Grid.SetColumn(gear,1);powerRow.Children.Add(gear);left.Children.Add(powerRow);
+   var display=new Border{Name="MotherboardLcdPreview",Width=169,Height=301,Background=Brush("#090909"),BorderThickness=new Thickness(0),Margin=new Thickness(0,28,26,15),HorizontalAlignment=HorizontalAlignment.Center,ToolTip="配置预览；设备屏幕画面未读取。"};int? previewPreset=lcdSelectedPreset??LcdConfiguredPreset(snapshot);if(lcdMonitorMode)display.Child=LcdMonitorPreview(snapshot);else if(previewPreset.HasValue)display.Child=OriginalInstalledImage(LcdPresetPath(previewPreset.Value),169,301);left.Children.Add(display);
+   var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,34,10)};
+   var applyContent=Button("应用",ApplyLcdDraft);applyContent.IsEnabled=lcdMonitorMode?LcdMonitorCanApply(snapshot):lcdSelectedPreset.HasValue&&LcdWritable(snapshot,"presetWritable");var resetDraft=Button("默认",()=>{if(busy||closing||render)return;lcdSelectedPreset=0;lcdMonitorMode=false;ShowPage(page);});resetDraft.IsEnabled=!busy&&!closing&&!render;resetDraft.ToolTip="选择默认预设，点击应用后显示";foreach(var button in new[]{applyContent,resetDraft}){button.Width=132;button.Height=34;button.Padding=new Thickness(12,4,12,4);button.Margin=new Thickness(19,0,0,0);actions.Children.Add(button);}right.Children.Add(actions);
+   var modes=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(10,0,0,36)};
+   var imagesMode=OriginalAuraColourRadio("Image & Exclusive Animation",!lcdMonitorMode);imagesMode.FontSize=14;imagesMode.Height=20;imagesMode.Margin=new Thickness(0,0,16,0);imagesMode.IsEnabled=!busy&&!render;imagesMode.Checked+=(s,e)=>{if(busy||closing||render)return;lcdMonitorMode=false;ShowPage(page);};modes.Children.Add(imagesMode);var monitorMode=OriginalAuraColourRadio("硬件监控",lcdMonitorMode);monitorMode.FontSize=14;monitorMode.Height=20;monitorMode.Margin=new Thickness(0);monitorMode.IsEnabled=!busy&&!render;monitorMode.Checked+=(s,e)=>{if(busy||closing||render)return;lcdMonitorMode=true;ShowPage(page);};modes.Children.Add(monitorMode);right.Children.Add(modes);
+   if(lcdMonitorMode){OriginalLcdMonitorEditor(right,snapshot);body.MinWidth=1176;content.Children.Add(new ScrollViewer{Content=body,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,CanContentScroll=false,Tag="lcdMonitor:bodyViewport"});return;}
+   var instructions=Paragraph("Only JPG formats allowed, with a storage limit of 64MB",11,muted);instructions.Margin=new Thickness(0,0,0,9);right.Children.Add(instructions);
    var upload=Button("上传文件",OpenLcdUpload);upload.IsEnabled=LcdWritable(snapshot,"imageUploadWritable");upload.Padding=new Thickness(15,7,15,7);upload.HorizontalAlignment=HorizontalAlignment.Left;upload.Margin=new Thickness(0,0,0,22);right.Children.Add(upload);
-   var presets=new Grid();for(int i=0;i<7;i++)presets.ColumnDefinitions.Add(new ColumnDefinition());presets.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});presets.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+   var presets=new Grid();for(int i=0;i<7;i++)presets.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});presets.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});presets.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
    for(int i=0;i<8;i++) {
     string path=i<2?Path.Combine(OriginalLcdAssets,"bg_anim","x870_launch"+(i+1).ToString(CultureInfo.InvariantCulture)+".gif"):Path.Combine(OriginalLcdAssets,"bg_img","x870_"+(i-1).ToString("00",CultureInfo.InvariantCulture)+".png");
     // Thumbnails show the installed preset assets, never imply they are the
     // live screen contents. GIFs use WPF's first frame for the thumbnail.
-    var image=OriginalInstalledImage(path,80,142);
-    int presetId=i;var slot=new Border{Child=image,BorderBrush=lcdSelectedPreset==i?accent:border,BorderThickness=new Thickness(lcdSelectedPreset==i?2:1),Padding=new Thickness(3),Margin=new Thickness(i%7==0?0:4,0,i%7==6?0:4,13),Background=Brush("#141414"),ToolTip="选择预设 "+(i+1)+" · 点击应用后显示",Cursor=System.Windows.Input.Cursors.Hand};slot.MouseLeftButtonUp+=(s,e)=>{lcdSelectedPreset=presetId;ShowPage(page);};Grid.SetColumn(slot,i%7);Grid.SetRow(slot,i/7);presets.Children.Add(slot);
+    var image=OriginalInstalledImage(path,67,119);
+    int presetId=i;var slot=new Border{Width=72,Height=125,Child=image,BorderBrush=lcdSelectedPreset==i?accent:muted,BorderThickness=new Thickness(lcdSelectedPreset==i?2:1),Padding=new Thickness(1),Margin=new Thickness(0,0,i%7==6?0:20,18),Background=Brush("#141414"),ToolTip="预设 "+(i+1),IsEnabled=!busy&&!render,Cursor=System.Windows.Input.Cursors.Hand};slot.MouseLeftButtonUp+=(s,e)=>{if(busy||closing||render)return;lcdSelectedPreset=presetId;ShowPage(page);};Grid.SetColumn(slot,i%7);Grid.SetRow(slot,i/7);presets.Children.Add(slot);
    }
-   right.Children.Add(presets);content.Children.Add(body);
+   right.Children.Add(KeyboardHorizontalChoices(presets,92,-1));content.Children.Add(body);
   }
+
+  int? LcdConfiguredPreset(Dictionary<string,object> snapshot){if(OriginalStateFlag(snapshot,"profileReadbackConfirmed")!=true)return null;var group=GearMap(snapshot,"currentMediaProfile");if(OriginalStateText(group,"type","")!="2"||OriginalStateText(group,"source","")!="1")return null;return MouseInteger(group,"index_format",0,7);}
+  void OriginalMotherboardAntennaUnavailable(){var body=new StackPanel{Name="MotherboardAntennaUnavailable",Width=540,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,178,0,0)};var icon=new Border{Width=90,Height=90,CornerRadius=new CornerRadius(45),BorderBrush=Brush("#2292AE"),BorderThickness=new Thickness(2),Child=new TextBlock{Text="i",FontSize=60,Foreground=Brush("#2292AE"),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}};body.Children.Add(icon);var caption=Label("请检查是否已安装无线网络驱动程序",14,text,FontWeights.SemiBold);caption.TextAlignment=TextAlignment.Center;caption.Margin=new Thickness(0,60,0,26);body.Children.Add(caption);var done=Button("确定",()=>ShowPage("设备"));done.Width=132;done.Height=34;done.HorizontalAlignment=HorizontalAlignment.Center;done.Padding=new Thickness(10,4,10,4);done.Margin=new Thickness(0);body.Children.Add(done);content.Children.Add(body);}
 
   static bool? OriginalStateFlag(IDictionary<string,object> snapshot,string key) {
    object value;if(snapshot==null||!snapshot.TryGetValue(key,out value)||!(value is bool))return null;return (bool)value;

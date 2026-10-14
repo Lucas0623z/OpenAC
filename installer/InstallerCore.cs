@@ -44,7 +44,7 @@ namespace RogControlInstaller {
         }
         internal static readonly string[] RuntimeFiles = {
             "OpenAC.exe", "OpenAC.exe.config", "DirectAuraWorker.exe", "GearLinkWorker.exe", "SDKWorker.exe",
-            "StorageWorker.exe", "AudioEndpointWorker.exe", "DiscoveryWorker.exe", "LICENSE", "THIRD-PARTY-NOTICES.md",
+            "StorageWorker.exe", "AudioEndpointWorker.exe", "DiscoveryWorker.exe", "NotebookWorker.exe", "LICENSE", "THIRD-PARTY-NOTICES.md",
             "PROVENANCE.md", "DirectAuraWorker-LICENSE.txt", "README.md", "PUBLIC-RELEASE.md", "assets/products/manifest.json", "assets/products/SOURCES.md"
         };
         internal static string Programs { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs"); } }
