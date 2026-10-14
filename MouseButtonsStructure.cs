@@ -1,0 +1,117 @@
+// Copyright (c) OpenAC contributors. SPDX-License-Identifier: MIT
+// Independent WPF composition and local drafts; no manufacturer artwork/source.
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Shapes;
+
+namespace RogControl {
+ public sealed class MouseButtonsDraft {
+  public string DeviceId="",CapturedAt="",SelectedButton="",Type="mouse",Target="",BaselineTarget="";
+  public int? BaselineCode;
+  public bool Shift,Dirty;
+  public MouseButtonsDraft Copy(){return new MouseButtonsDraft{DeviceId=DeviceId,CapturedAt=CapturedAt,SelectedButton=SelectedButton,Type=Type,Target=Target,BaselineTarget=BaselineTarget,BaselineCode=BaselineCode,Shift=Shift,Dirty=Dirty};}
+ }
+ public sealed class MouseButtonObservation {
+  public string DeviceId,CapturedAt,Source,Target;
+  public bool IdentityConfirmed,SourceAvailable,BindingKnown,Shift;
+  public int? TargetCode;
+ }
+ public static class MouseButtonsUiFacts {
+  public static readonly string[] Sources={"leftButton","rightButton","middleButton","sideKeyLeftBackward","sideKeyLeftForward","dpi1","scrollUp","scrollDown"};
+  public static readonly string[] MouseFunctions={"MouseClickLeft","MouseClickRight","MouseClickMiddle","MouseScrollUp","MouseScrollDown","MouseDPISwitch","MouseLeftBackward","MouseLeftForward","MouseTargetFocus","MouseDoubleClick"};
+  static object Field(IDictionary<string,object> state,string key){object value;return state!=null&&state.TryGetValue(key,out value)?value:null;}
+  static bool Flag(IDictionary<string,object> state,string key,bool value){object raw=Field(state,key);return raw is bool&&(bool)raw==value;}
+  static int? Number(object raw,int min,int max){return raw is int&&(int)raw>=min&&(int)raw<=max?(int?)raw:null;}
+  public static string[] Options(IDictionary<string,object> state,string key){var settings=Field(state,"settingOptions") as IDictionary<string,object>;var items=Field(settings,key) as IEnumerable;if(items==null||items is string)return new string[0];return items.Cast<object>().Where(item=>item is string&&!String.IsNullOrWhiteSpace((string)item)).Cast<string>().Distinct(StringComparer.Ordinal).ToArray();}
+  static bool Capability(IDictionary<string,object> state,string key,string value){var items=Field(state,key) as IEnumerable;return items!=null&&!(items is string)&&items.Cast<object>().Any(item=>item is string&&(string)item==value);}
+  public static int? TargetCode(string name){
+   return MouseButtonActionFacts.Code(name);
+  }
+  public static string Caption(string name){switch(name){case "leftButton":return "左键";case "rightButton":return "右键";case "middleButton":return "滚轮点击";case "sideKeyLeftForward":return "前进";case "sideKeyLeftBackward":return "后退";case "scrollUp":return "向上滚动";case "scrollDown":return "向下滚动";case "dpi1":return "DPI 切换";default:return MouseButtonActionFacts.Caption(name);}}
+  public static string Category(string target){return MouseButtonActionFacts.Category(target);}
+  public static MouseButtonObservation Read(IDictionary<string,object> state,string source,bool shift){
+   var result=new MouseButtonObservation{Source=source,Shift=shift,DeviceId=Field(state,"deviceId") as string,CapturedAt=Field(state,"capturedAt") as string};var snapshot=Field(state,"snapshot") as IDictionary<string,object>;int? pid=Number(Field(state,"pid"),0,65535);
+   result.IdentityConfirmed=pid.HasValue&&(pid==7546||pid==7548)&&KeyboardLightingUiFacts.Identity(result.DeviceId,pid.Value)&&Field(state,"kind") as string=="mouse"&&Number(Field(snapshot,"modelPid"),0,65535)==pid&&Flag(state,"connected",true)&&Flag(state,"online",true)&&Flag(state,"readbackConfirmed",true);
+   result.SourceAvailable=result.IdentityConfirmed&&Sources.Contains(source,StringComparer.Ordinal)&&Options(state,"buttonSources").Contains(source,StringComparer.Ordinal);
+   string field=shift?"shiftButtonBindings":"buttonBindings";var bindings=Field(snapshot,field) as IDictionary<string,object>;var binding=Field(bindings,source??"") as IDictionary<string,object>;
+   if(!result.SourceAvailable||!Capability(state,"readCapabilities",field)||binding==null)return result;
+   result.Target=Field(binding,"target") as string;result.TargetCode=Number(Field(binding,"targetCode"),0,65535);
+   result.BindingKnown=result.TargetCode.HasValue&&TargetCode(result.Target)==result.TargetCode&&Options(state,"buttonTargets").Contains(result.Target,StringComparer.Ordinal);
+   return result;
+  }
+  public static bool StampValid(string value){return !String.IsNullOrWhiteSpace(value)&&value.Length<=128;}
+  public static string[] Actions(IDictionary<string,object> state,MouseButtonObservation observed,string category){var snapshot=Field(state,"snapshot") as IDictionary<string,object>;return observed==null||!observed.SourceAvailable||!observed.BindingKnown?new string[0]:MouseButtonActionFacts.Targets(category).Where(target=>Options(state,"buttonTargets").Contains(target,StringComparer.Ordinal)&&MouseButtonActionFacts.TargetAllowed(snapshot,observed.Source,target,observed.Shift)).ToArray();}
+  public static bool CanChooseMouse(IDictionary<string,object> state,MouseButtonObservation observed){return observed!=null&&observed.BindingKnown&&StampValid(observed.CapturedAt)&&Capability(state,"setCapabilities","buttonBinding")&&new[]{"mouse","keyboard","media","speedshift"}.Any(category=>Actions(state,observed,category).Length>0);}
+  public static bool Matches(IDictionary<string,object> state,MouseButtonsDraft draft){if(draft==null)return false;var observed=Read(state,draft.SelectedButton,draft.Shift);return observed.BindingKnown&&StampValid(observed.CapturedAt)&&observed.DeviceId==draft.DeviceId&&observed.CapturedAt==draft.CapturedAt&&observed.Target==draft.BaselineTarget&&observed.TargetCode==draft.BaselineCode;}
+  public static Dictionary<string,object> Command(IDictionary<string,object> state,MouseButtonsDraft draft){if(draft==null||!draft.Dirty||!Matches(state,draft)||!CanChooseMouse(state,Read(state,draft.SelectedButton,draft.Shift))||Category(draft.Target)!=draft.Type||!Actions(state,Read(state,draft.SelectedButton,draft.Shift),draft.Type).Contains(draft.Target,StringComparer.Ordinal)||draft.Target==draft.BaselineTarget)return null;return new Dictionary<string,object>{{"button",draft.SelectedButton},{"target",draft.Target},{"shift",draft.Shift}};}
+ }
+ public partial class MainWindow {
+  MouseButtonsDraft mouseButtonsDraft;
+  Dictionary<string,object> mouseButtonsObservedState,mouseButtonsObservedSnapshot,mouseButtonsRestoreBarrier;
+  bool mouseButtonsApplying,mouseButtonsWaitingForRead;
+  public bool MouseButtonsCanPreviewReload {get{return !mouseButtonsApplying;}}
+  MouseButtonsDraft CaptureMouseButtonsState(){return mouseButtonsDraft==null?null:mouseButtonsDraft.Copy();}
+  void RestoreMouseButtonsState(MouseButtonsDraft saved){
+   mouseButtonsDraft=null;mouseButtonsObservedState=null;mouseButtonsObservedSnapshot=null;mouseButtonsRestoreBarrier=null;mouseButtonsWaitingForRead=false;
+   if(saved==null||saved.DeviceId==null||saved.DeviceId.Length>256||saved.SelectedButton==null||saved.Target==null||saved.Target.Length>128||saved.BaselineTarget==null||saved.BaselineTarget.Length>128||saved.CapturedAt==null||saved.CapturedAt.Length>128||!new[]{"","mouse","keyboard","macro","media","windows","speedshift","armoury","text","screenshot","unknown"}.Contains(saved.Type)||saved.SelectedButton.Length>0&&!MouseButtonsUiFacts.Sources.Contains(saved.SelectedButton,StringComparer.Ordinal)||saved.BaselineCode.HasValue&&(saved.BaselineCode<0||saved.BaselineCode>65535))return;
+   if(saved.Target.Length>0&&!MouseButtonsUiFacts.TargetCode(saved.Target).HasValue)return;
+   mouseButtonsDraft=saved.Copy();mouseButtonsWaitingForRead=true;gearStates.TryGetValue("mouse",out mouseButtonsRestoreBarrier);
+  }
+  bool MouseButtonsHasPendingDraft(Dictionary<string,object> state){return mouseButtonsDraft!=null&&mouseButtonsDraft.Dirty&&!mouseButtonsWaitingForRead&&Object.ReferenceEquals(state,mouseButtonsObservedState)&&MouseButtonsUiFacts.Matches(state,mouseButtonsDraft);}
+  MouseButtonsDraft MouseButtonsValues(Dictionary<string,object> state){
+   if(mouseButtonsWaitingForRead&&state==null&&mouseButtonsDraft!=null)return mouseButtonsDraft;
+   string id=OriginalStateText(state,"deviceId","");if(mouseButtonsDraft==null||mouseButtonsDraft.DeviceId!=id){mouseButtonsDraft=new MouseButtonsDraft{DeviceId=id};mouseButtonsObservedState=null;mouseButtonsObservedSnapshot=null;mouseButtonsWaitingForRead=false;mouseButtonsRestoreBarrier=null;}
+   var draft=mouseButtonsDraft;var observed=MouseButtonsUiFacts.Read(state,draft.SelectedButton,draft.Shift);
+   if(mouseButtonsWaitingForRead){if(Object.ReferenceEquals(state,mouseButtonsRestoreBarrier)||!observed.IdentityConfirmed||draft.SelectedButton.Length>0&&!observed.BindingKnown||!MouseButtonsUiFacts.StampValid(observed.CapturedAt))return draft;mouseButtonsWaitingForRead=false;mouseButtonsRestoreBarrier=null;}
+   var snapshot=GearMap(state,"snapshot");if(!Object.ReferenceEquals(state,mouseButtonsObservedState)||!Object.ReferenceEquals(snapshot,mouseButtonsObservedSnapshot)||draft.CapturedAt!=observed.CapturedAt||!MouseButtonsUiFacts.Matches(state,draft)){
+    string wanted=draft.Dirty?draft.Target:null;mouseButtonsObservedState=state;mouseButtonsObservedSnapshot=snapshot;draft.CapturedAt=observed.CapturedAt??"";draft.BaselineTarget=observed.BindingKnown?observed.Target:"";draft.BaselineCode=observed.TargetCode;
+    draft.Target=wanted!=null&&MouseButtonActionFacts.Targets(MouseButtonsUiFacts.Category(wanted)).Contains(wanted,StringComparer.Ordinal)&&MouseButtonsUiFacts.Options(state,"buttonTargets").Contains(wanted,StringComparer.Ordinal)?wanted:draft.BaselineTarget;draft.Type=MouseButtonsUiFacts.Category(draft.Target);draft.Dirty=observed.BindingKnown&&draft.Target!=draft.BaselineTarget;
+   }return draft;
+  }
+  bool MouseButtonsSessionCurrent(Dictionary<string,object> state,MouseButtonsDraft draft){Dictionary<string,object> current;return draft!=null&&Object.ReferenceEquals(draft,mouseButtonsDraft)&&!mouseButtonsWaitingForRead&&gearStates.TryGetValue("mouse",out current)&&Object.ReferenceEquals(current,state)&&Object.ReferenceEquals(state,mouseButtonsObservedState)&&Object.ReferenceEquals(GearMap(state,"snapshot"),mouseButtonsObservedSnapshot)&&MouseButtonsUiFacts.Matches(state,draft);}
+  bool MouseButtonsCanSelect(Dictionary<string,object> state,MouseButtonsDraft draft,string source){Dictionary<string,object> current;return !busy&&!closing&&!mouseButtonsApplying&&!mouseButtonsWaitingForRead&&Object.ReferenceEquals(draft,mouseButtonsDraft)&&gearStates.TryGetValue("mouse",out current)&&Object.ReferenceEquals(current,state)&&Object.ReferenceEquals(state,mouseButtonsObservedState)&&Object.ReferenceEquals(GearMap(state,"snapshot"),mouseButtonsObservedSnapshot)&&MouseButtonsUiFacts.Read(state,source,draft.Shift).SourceAvailable;}
+  bool MouseButtonsCanEdit(Dictionary<string,object> state,MouseButtonsDraft draft){return !busy&&!closing&&!mouseButtonsApplying&&MouseButtonsSessionCurrent(state,draft)&&MouseButtonsUiFacts.CanChooseMouse(state,MouseButtonsUiFacts.Read(state,draft.SelectedButton,draft.Shift));}
+  bool MouseButtonsMayApply(Dictionary<string,object> state,MouseButtonsDraft draft){return !render&&MouseButtonsCanEdit(state,draft)&&CanApplyGear(state,"buttonBinding")&&MouseButtonsUiFacts.Command(state,draft)!=null;}
+  async Task ApplyMouseButtonsDraftAsync(Dictionary<string,object> state,MouseButtonsDraft draft){if(!MouseButtonsMayApply(state,draft))return;var command=MouseButtonsUiFacts.Command(state,draft);if(command==null)return;mouseButtonsApplying=true;try{await SetGearSetting("mouse",state,"buttonBinding",command);}finally{mouseButtonsApplying=false;if(!closing)ShowPage(page);}}
+  void OriginalMouseButtonsPage(StackPanel target,Dictionary<string,object> state){
+   var draft=MouseButtonsValues(state);var surface=new Canvas{Tag="MouseButtons.Surface",Width=1246,Height=640};var viewport=new ScrollViewer{Tag="MouseButtons.Viewport",Content=surface,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,Margin=new Thickness(0),HorizontalAlignment=HorizontalAlignment.Stretch};target.Children.Add(viewport);
+   var reset=MouseButtonsOutline("重置",()=>{});reset.Tag="MouseButtons.Reset";reset.Width=138;reset.Height=35;reset.IsEnabled=false;reset.ToolTip="重置接口尚未接通。";ToolTipService.SetShowOnDisabled(reset,true);MouseButtonsPlace(surface,reset,1070,24);
+   var editor=new Border{Tag="MouseButtons.Editor",Width=376,Height=493,BorderBrush=muted,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(3),Background=Brushes.Transparent};MouseButtonsPlace(surface,editor,829,82);
+   var figure=new Border{Tag="MouseButtons.Figure",Width=190,Height=362,Margin=new Thickness(0),Child=MouseButtonsOwnFigure(draft.SelectedButton)};MouseButtonsPlace(surface,figure,307,104);
+   string[] left={"leftButton","sideKeyLeftForward","sideKeyLeftBackward","scrollUp"},right={"middleButton","scrollDown","rightButton"};double[] leftY={146,241,334,428},rightY={193,287,382};var buttons=new List<Button>();
+   Action refresh=()=>{editor.Child=MouseButtonsEditor(state,draft);figure.Child=MouseButtonsOwnFigure(draft.SelectedButton);foreach(var button in buttons){string source=(string)button.Tag;var observed=MouseButtonsUiFacts.Read(state,source,draft.Shift);button.Content=observed.BindingKnown?MouseButtonsUiFacts.Caption(observed.Target):"—";button.BorderBrush=draft.SelectedButton==source?accent:muted;}};
+   for(int i=0;i<7;i++){string source=i<4?left[i]:right[i-4];var observed=MouseButtonsUiFacts.Read(state,source,draft.Shift);var button=MouseButtonsOutline(observed.BindingKnown?MouseButtonsUiFacts.Caption(observed.Target):"—",()=>{if(!MouseButtonsCanSelect(state,draft,source))return;draft.SelectedButton=source;draft.Target="";draft.BaselineTarget="";draft.BaselineCode=null;draft.Dirty=false;MouseButtonsValues(state);refresh();});button.Tag=source;button.Width=220;button.Height=35;button.IsEnabled=MouseButtonsCanSelect(state,draft,source);button.ToolTip=MouseButtonsUiFacts.Caption(source);ToolTipService.SetShowOnDisabled(button,true);buttons.Add(button);MouseButtonsPlace(surface,button,i<4?49:540,i<4?leftY[i]:rightY[i-4]);}
+   refresh();
+  }
+  UIElement MouseButtonsEditor(Dictionary<string,object> state,MouseButtonsDraft draft){
+   if(draft.SelectedButton.Length==0){var prompt=Label("选择一个鼠标按钮以编辑其设置。",14,text,FontWeights.SemiBold);prompt.Tag="MouseButtons.EmptyPrompt";prompt.Margin=new Thickness(16);prompt.HorizontalAlignment=HorizontalAlignment.Center;prompt.VerticalAlignment=VerticalAlignment.Center;return prompt;}
+   var editor=new Canvas{Tag="MouseButtons.SelectedEditor",Width=374,Height=491};var title=Label(MouseButtonsUiFacts.Caption(draft.SelectedButton),24,text,FontWeights.SemiBold);title.Tag="MouseButtons.SelectedTitle";title.Margin=new Thickness(0);title.Width=374;title.TextAlignment=TextAlignment.Center;MouseButtonsPlace(editor,title,0,33);
+   bool editing=MouseButtonsCanEdit(state,draft);var types=MouseButtonsCombo(325,editing);types.Tag="MouseButtons.Type";string[] codes={"mouse","keyboard","macro","media","windows","speedshift","armoury","text","screenshot"},names={"鼠标功能","键盘功能","宏","多媒体","Windows 快捷方式","speed shift","开启 Armoury Crate","预设输入文字","截图"};
+   var currentObservation=MouseButtonsUiFacts.Read(state,draft.SelectedButton,draft.Shift);for(int i=0;i<codes.Length;i++){var option=new MouseButtonChoice{Name=names[i],Value=codes[i],Enabled=MouseButtonsUiFacts.Actions(state,currentObservation,codes[i]).Length>0};types.Items.Add(option);if(option.Value==draft.Type)types.SelectedItem=option;}if(types.SelectedIndex<0){types.Items.Insert(0,new MouseButtonChoice{Name="—",Value="unknown",Enabled=false});types.SelectedIndex=0;}types.ToolTip="键盘功能当前支持单键；固件组合键、宏和软件动作尚未接通。";MouseButtonsPlace(editor,types,24,84);
+   var arrow=new Path{Data=Geometry.Parse("M 0,0 L 10,6 20,0 10,13 Z"),Stroke=muted,StrokeThickness=1,Fill=Brushes.Transparent,Width=20,Height=13,Stretch=Stretch.Fill};MouseButtonsPlace(editor,arrow,177,145);
+   int categoryIndex=Array.IndexOf(codes,draft.Type);var functionTitle=Label(categoryIndex>=0?names[categoryIndex]:"鼠标功能",16,text);functionTitle.Margin=new Thickness(0);MouseButtonsPlace(editor,functionTitle,24,191);
+   var functions=MouseButtonsCombo(325,editing&&MouseButtonsUiFacts.Actions(state,currentObservation,draft.Type).Length>0);functions.Tag="MouseButtons.Function";bool syncingFunctions=false;Action fillFunctions=()=>{syncingFunctions=true;functions.Items.Clear();functions.Items.Add(new MouseButtonChoice{Name="—",Value="",Enabled=false});foreach(string value in MouseButtonsUiFacts.Actions(state,currentObservation,draft.Type)){var choice=new MouseButtonChoice{Name=MouseButtonsUiFacts.Caption(value),Value=value,Enabled=true};functions.Items.Add(choice);if(value==draft.Target)functions.SelectedItem=choice;}if(draft.Type=="media")functions.Items.Add(new MouseButtonChoice{Name="麦克风关闭 / 解除关闭",Value="MuteMicrophone",Enabled=false});if(functions.SelectedIndex<0&&draft.Target.Length>0){var current=new MouseButtonChoice{Name=MouseButtonsUiFacts.Caption(draft.Target),Value=draft.Target,Enabled=false};functions.Items.Add(current);functions.SelectedItem=current;}if(functions.SelectedIndex<0)functions.SelectedIndex=0;syncingFunctions=false;};fillFunctions();functions.ToolTip=draft.Type=="speedshift"?"只指定一个普通按键为 Shift 触发；左键、滚轮及 Shift 层不可作为触发键。":draft.Type=="keyboard"?"绑定硬件单键，不捕获或模拟系统键盘输入。":null;MouseButtonsPlace(editor,functions,24,219);
+   var apply=MouseButtonsOutline("应用",async()=>await ApplyMouseButtonsDraftAsync(state,draft));apply.Tag="MouseButtons.Apply";apply.Width=108;apply.Height=34;apply.IsEnabled=MouseButtonsMayApply(state,draft);apply.ToolTip=mouseButtonsWaitingForRead?"等待读取":!HardwareWritesEnabled?HardwareControlPolicy.BlockedMessage:"只应用当前按钮的本地编辑。";ToolTipService.SetShowOnDisabled(apply,true);MouseButtonsPlace(editor,apply,241,279);
+   bool syncingTypes=false;
+   types.SelectionChanged+=(s,e)=>{if(syncingTypes)return;var chosen=types.SelectedItem as MouseButtonChoice;if(chosen==null||!chosen.Enabled||!MouseButtonsCanEdit(state,draft)){syncingTypes=true;types.SelectedItem=types.Items.Cast<MouseButtonChoice>().FirstOrDefault(item=>item.Value==draft.Type);syncingTypes=false;return;}draft.Type=chosen.Value;draft.Target="";draft.Dirty=true;functionTitle.Text=chosen.Name;functions.IsEnabled=MouseButtonsCanEdit(state,draft)&&MouseButtonsUiFacts.Actions(state,currentObservation,draft.Type).Length>0;fillFunctions();apply.IsEnabled=false;};
+   functions.SelectionChanged+=(s,e)=>{if(syncingFunctions)return;var chosen=functions.SelectedItem as MouseButtonChoice;if(chosen==null||!chosen.Enabled||!MouseButtonsUiFacts.Actions(state,currentObservation,draft.Type).Contains(chosen.Value,StringComparer.Ordinal)||!MouseButtonsCanEdit(state,draft)){syncingFunctions=true;functions.SelectedItem=functions.Items.Cast<MouseButtonChoice>().FirstOrDefault(item=>item.Value==draft.Target)??functions.Items[0];syncingFunctions=false;return;}draft.Target=chosen.Value;draft.Dirty=draft.Target!=draft.BaselineTarget;apply.IsEnabled=MouseButtonsMayApply(state,draft);};
+   var shift=new CheckBox{Tag="MouseButtons.Shift",Content="Shift 模式",IsChecked=draft.Shift,IsThreeState=false,Foreground=muted,FontSize=12,IsEnabled=MouseButtonsCanSelect(state,draft,draft.SelectedButton),ToolTip="编辑独立的 Shift 绑定；切换此视图不会设置设备。"};MouseButtonsPlace(editor,shift,24,402);
+   RoutedEventHandler switchMode=(s,e)=>{if(!MouseButtonsCanSelect(state,draft,draft.SelectedButton)){shift.IsChecked=draft.Shift;return;}draft.Shift=shift.IsChecked==true;draft.Dirty=false;draft.Target="";draft.BaselineTarget="";draft.BaselineCode=null;MouseButtonsValues(state);ShowPage(page);};shift.Checked+=switchMode;shift.Unchecked+=switchMode;
+   if(MouseButtonsUiFacts.Options(state,"buttonSources").Contains("dpi1",StringComparer.Ordinal)){var dpi=MouseButtonsOutline("DPI 切换",()=>{if(!MouseButtonsCanSelect(state,draft,"dpi1"))return;draft.SelectedButton="dpi1";draft.Dirty=false;draft.Target="";draft.BaselineTarget="";draft.BaselineCode=null;MouseButtonsValues(state);ShowPage(page);});dpi.Tag="MouseButtons.DpiSource";dpi.Width=108;dpi.Height=28;dpi.FontSize=12;dpi.IsEnabled=MouseButtonsCanSelect(state,draft,"dpi1");dpi.ToolTip="编辑鼠标底部 DPI 按钮；未在正面示意图中标注位置。";MouseButtonsPlace(editor,dpi,24,438);}
+   return editor;
+  }
+  sealed class MouseButtonChoice {public string Name{get;set;}public string Value{get;set;}public bool Enabled{get;set;}public override string ToString(){return Name;}}
+  ComboBox MouseButtonsCombo(double width,bool enabled){var box=MousePerformanceCombo(new string[0],-1,enabled,width);var style=new Style(typeof(ComboBoxItem));style.Setters.Add(new Setter(Control.ForegroundProperty,text));style.Setters.Add(new Setter(Control.BackgroundProperty,Brush("#181818")));style.Setters.Add(new Setter(UIElement.IsEnabledProperty,new Binding("Enabled")));style.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(10,7,10,7)));box.ItemContainerStyle=style;return box;}
+  Button MouseButtonsOutline(string name,Action clicked){var button=KeyboardOutlineButton(name,clicked);button.Margin=new Thickness(0);button.FontSize=15;button.Padding=new Thickness(10,3,10,3);button.Background=Brushes.Transparent;return button;}
+  static void MouseButtonsPlace(Canvas parent,UIElement child,double x,double y){Canvas.SetLeft(child,x);Canvas.SetTop(child,y);parent.Children.Add(child);}
+  UIElement MouseButtonsOwnFigure(string selected){var shape=new Canvas{Width=190,Height=362,Tag="MouseButtons.OwnGeometry"};shape.Children.Add(new Path{Data=Geometry.Parse("M 94,1 C 151,1 182,15 181,72 L 183,217 C 197,305 163,359 95,361 C 27,359 -7,305 7,217 L 9,72 C 8,15 39,1 94,1 Z"),Stroke=muted,StrokeThickness=1,Fill=Brushes.Transparent});shape.Children.Add(new Path{Data=Geometry.Parse("M 83,2 L 83,141 12,151 M 107,2 L 107,141 179,151 M 94,2 L 94,49 M 94,104 L 94,149"),Stroke=muted,StrokeThickness=1});var wheel=new Border{Width=19,Height=50,CornerRadius=new CornerRadius(4),BorderBrush=selected=="middleButton"||selected=="scrollUp"||selected=="scrollDown"?accent:muted,BorderThickness=new Thickness(1)};MouseButtonsPlace(shape,wheel,84,52);foreach(int y in new[]{125,174}){var side=new Border{Width=5,Height=40,CornerRadius=new CornerRadius(2),BorderBrush=selected==(y==125?"sideKeyLeftForward":"sideKeyLeftBackward")?accent:muted,BorderThickness=new Thickness(1)};MouseButtonsPlace(shape,side,2,y);}string highlight=selected=="leftButton"?"M 83,2 L 83,141 12,151":selected=="rightButton"?"M 107,2 L 107,141 179,151":null;if(highlight!=null)shape.Children.Add(new Path{Data=Geometry.Parse(highlight),Stroke=accent,StrokeThickness=1.5});return shape;}
+ }
+}

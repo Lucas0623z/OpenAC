@@ -27,6 +27,8 @@ internal static class DirectAuraProgram
     }
 }
 
+internal enum AuraUsbFamily { Motherboard, Addressable }
+
 internal sealed class DirectAuraWorker : IDisposable
 {
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 65536, RecursionLimit = 16 };
@@ -39,7 +41,7 @@ internal sealed class DirectAuraWorker : IDisposable
     internal int Run()
     {
         string line;
-        while (!stop && (line = Console.ReadLine()) != null)
+        while (!stop && (line = OpenAc.WorkerTextProtocol.ReadLine()) != null)
         {
             object id = null;
             Dictionary<string, object> result = new Dictionary<string, object>();
@@ -99,10 +101,11 @@ internal sealed class DirectAuraWorker : IDisposable
                 byte[] cfg = device.Query(0xB0, 0x30);
                 byte[] table = ParseConfig(cfg);
                 string firmware = ParseFirmware(fw);
-                List<Zone> zones = ParseZones(table);
+                AuraUsbFamily family;if(!TryFamily(info.ProductId,out family)) throw new InvalidOperationException("Unrecognized Aura USB family.");
+                List<Zone> zones = ParseZones(table,family);
                 if (zones.Count == 0) throw new InvalidOperationException("Controller reported no lighting zones.");
                 Controller controller = new Controller { Info = info, Hid = device, Firmware = firmware,
-                    Config = table, Zones = zones, Id = Identity(info.Path), Name = "ASUS Aura motherboard (native USB)" };
+                    Config = table, Zones = zones, Family = family, Id = Identity(info.Path), Name = family==AuraUsbFamily.Motherboard?"ASUS Aura motherboard (native USB)":"ASUS Aura addressable controller (native USB)" };
                 controllers.Add(controller);
                 device = null;
             }
@@ -146,7 +149,7 @@ internal sealed class DirectAuraWorker : IDisposable
         // Prepare and validate every packet before the first hardware write.
         Dictionary<Controller, List<byte[]>> packets = new Dictionary<Controller, List<byte[]>>();
         foreach (Controller c in controllers)
-            if (ids.Contains(c.Id)) packets.Add(c, EffectPackets(c.Zones, mode, red, green, blue));
+            if (ids.Contains(c.Id)) packets.Add(c, EffectPackets(c.Zones, mode, red, green, blue,c.Family));
         foreach (KeyValuePair<Controller, List<byte[]>> item in packets)
             foreach (byte[] packet in item.Value) item.Key.Hid.Write(packet);
         controlled = true;
@@ -182,7 +185,9 @@ internal sealed class DirectAuraWorker : IDisposable
                 { "configTable", Hex(controller.Config) }, { "zones", zones.ToArray() },
                 { "effects", new[] { "static", "breathe", "cycle", "off" } }, { "speedSupported", false },
                 { "releaseRestoresFirmware", false }, { "backend", "native-hid" }, { "ledCountIsLogical", true },
-                { "zoneCount", controller.Zones.Count }, { "effectWriteValidated", false }
+                { "zoneCount", controller.Zones.Count }, { "effectWriteValidated", false },
+                { "controllerFamily", controller.Family==AuraUsbFamily.Motherboard?"motherboard":"addressable" },
+                { "physicalStripLedCountReadable", false }, { "generationReadable", false }, { "generationWritable", false }
             });
         }
         return result.ToArray();
@@ -205,11 +210,13 @@ internal sealed class DirectAuraWorker : IDisposable
         byte[] table = new byte[60]; Array.Copy(packet, 4, table, 0, 60); return table;
     }
     private static List<Zone> ParseZones(byte[] config)
+    { return ParseZones(config,AuraUsbFamily.Motherboard); }
+    private static List<Zone> ParseZones(byte[] config,AuraUsbFamily family)
     {
         if (config.Length != 60) throw new InvalidOperationException("Invalid configuration length.");
         List<Zone> zones = new List<Zone>();
         int channel = 0;
-        if (config[0x1B] > 0) zones.Add(new Zone { Name = "Motherboard", Channel = channel++, Leds = config[0x1B] });
+        if (family==AuraUsbFamily.Motherboard && config[0x1B] > 0) zones.Add(new Zone { Name = "Motherboard", Channel = channel++, Leds = config[0x1B] });
         if (config[2] > 8) throw new InvalidOperationException("Unrecognized configuration: too many ARGB headers.");
         for (int i = 0; i < config[2]; i++) zones.Add(new Zone { Name = "ARGB header " + (i + 1), Channel = channel++, Leds = 1, Addressable = true });
         return zones;
@@ -223,7 +230,19 @@ internal sealed class DirectAuraWorker : IDisposable
         throw new ArgumentException("Native USB supports static, breathe, cycle, and off. Rainbow is not implemented.");
     }
     private static List<byte[]> EffectPackets(List<Zone> zones, byte mode, byte red, byte green, byte blue)
+    { return EffectPackets(zones,mode,red,green,blue,AuraUsbFamily.Motherboard); }
+    private static List<byte[]> EffectPackets(List<Zone> zones, byte mode, byte red, byte green, byte blue,AuraUsbFamily family)
     {
+        if(mode!=0&&mode!=1&&mode!=2&&mode!=4) throw new ArgumentException("Unverified Aura USB effect mode.");
+        if(family==AuraUsbFamily.Addressable) {
+            if(zones==null||zones.Count<1||zones.Count>8) throw new InvalidOperationException("Addressable channel configuration is outside the prepared worker range.");
+            var channels=new HashSet<int>();var reports=new List<byte[]>();
+            foreach(Zone zone in zones) {
+                if(zone==null||!zone.Addressable||zone.Leds!=1||zone.Channel<0||zone.Channel>=8||!channels.Add(zone.Channel)) throw new InvalidOperationException("Invalid addressable logical channel; no write was sent.");
+                reports.Add(Report(0x3B,(byte)zone.Channel,0,mode,red,green,blue));
+            }
+            return reports;
+        }
         int total = 0;
         foreach (Zone z in zones) total += z.Leds;
         if (total < 1 || total > 16) throw new InvalidOperationException("Lighting configuration exceeds the proven 16-LED effect mask. No write was sent.");
@@ -260,7 +279,15 @@ internal sealed class DirectAuraWorker : IDisposable
     private static string Hex(byte[] data) { return BitConverter.ToString(data).Replace("-", ""); }
     private void DisposeControllers() { foreach (Controller c in controllers) c.Hid.Dispose(); controllers.Clear(); }
     public void Dispose() { DisposeControllers(); }
-    private sealed class Controller { internal HidInfo Info; internal NativeHid Hid; internal string Id, Name, Firmware; internal byte[] Config; internal List<Zone> Zones; }
+    internal static bool TryFamily(ushort pid,out AuraUsbFamily family) {
+        family=AuraUsbFamily.Motherboard;
+        switch(pid) {
+            case 0x18F3:case 0x1939:case 0x19AF:case 0x1AA6:case 0x1BED:return true;
+            case 0x1867:case 0x1872:case 0x18A3:case 0x18A5:family=AuraUsbFamily.Addressable;return true;
+            default:return false;
+        }
+    }
+    private sealed class Controller { internal HidInfo Info; internal NativeHid Hid; internal string Id, Name, Firmware; internal byte[] Config; internal List<Zone> Zones;internal AuraUsbFamily Family; }
     private sealed class Zone { internal string Name; internal int Channel, Leds; internal bool Addressable; }
 
     internal static int SelfTest()
@@ -279,6 +306,21 @@ internal sealed class DirectAuraWorker : IDisposable
         bool rejected = false; try { Mode("rainbow"); } catch (ArgumentException) { rejected = true; } check(rejected, "Unsupported effect rejected");
         rejected = false; try { ParseConfig(new byte[63]); } catch (InvalidOperationException) { rejected = true; } check(rejected, "Short reply rejected");
         zones[0].Leds = 16; rejected = false; try { EffectPackets(zones, 1, 1, 1, 1); } catch (InvalidOperationException) { rejected = true; } check(rejected, "Oversized mask rejected before I/O");
+        AuraUsbFamily family;
+        foreach(ushort pid in new ushort[]{0x18F3,0x1939,0x19AF,0x1AA6,0x1BED}) check(TryFamily(pid,out family)&&family==AuraUsbFamily.Motherboard,"MIT source motherboard family "+pid.ToString("X4"));
+        foreach(ushort pid in new ushort[]{0x1867,0x1872,0x18A3,0x18A5}) check(TryFamily(pid,out family)&&family==AuraUsbFamily.Addressable,"MIT source addressable family "+pid.ToString("X4"));
+        foreach(ushort pid in new ushort[]{0,0xFFFF,0x1D54,0x1D98}) check(!TryFamily(pid,out family),"unknown/device-other-protocol PID rejected "+pid.ToString("X4"));
+        var addressable=ParseZones(cfg,AuraUsbFamily.Addressable);
+        check(addressable.Count==3&&addressable[0].Addressable&&addressable[0].Channel==0&&addressable[0].Leds==1,"addressable family ignores motherboard-only onboard count");
+        var addressablePackets=EffectPackets(addressable,Mode("static"),0x11,0x22,0x33,AuraUsbFamily.Addressable);
+        check(addressablePackets.Count==3&&addressablePackets[0].Length==65&&addressablePackets[0][0]==0xEC&&addressablePackets[0][1]==0x3B,"addressable per-channel framing");
+        check(addressablePackets[0][2]==0&&addressablePackets[2][2]==2&&addressablePackets[0][3]==0&&addressablePackets[0][4]==1&&addressablePackets[0][5]==0x11&&addressablePackets[0][6]==0x22&&addressablePackets[0][7]==0x33,"addressable channel/mode/RGB source offsets");
+        foreach(string key in new[]{"off","breathe","cycle"}) check(EffectPackets(addressable,Mode(key),0,0,0,AuraUsbFamily.Addressable)[0][4]==Mode(key),"addressable supported mode "+key);
+        addressable[1].Channel=0;rejected=false;try{EffectPackets(addressable,1,1,2,3,AuraUsbFamily.Addressable);}catch(InvalidOperationException){rejected=true;}check(rejected,"duplicate addressable channel rejected before write");addressable[1].Channel=1;
+        addressable[1].Leds=2;rejected=false;try{EffectPackets(addressable,1,1,2,3,AuraUsbFamily.Addressable);}catch(InvalidOperationException){rejected=true;}check(rejected,"physical LED count never guessed from addressable logical channel");addressable[1].Leds=1;
+        addressable[0].Addressable=false;rejected=false;try{EffectPackets(addressable,1,1,2,3,AuraUsbFamily.Addressable);}catch(InvalidOperationException){rejected=true;}check(rejected,"motherboard zone cannot become addressable packet");addressable[0].Addressable=true;
+        rejected=false;try{EffectPackets(addressable,3,1,2,3,AuraUsbFamily.Addressable);}catch(ArgumentException){rejected=true;}check(rejected,"unproven native mode rejected");
+        byte[] manyHeaders=new byte[60];manyHeaders[2]=9;rejected=false;try{ParseZones(manyHeaders,AuraUsbFamily.Addressable);}catch(InvalidOperationException){rejected=true;}check(rejected,"header table above worker-prepared limit is refused");
         AuraBoundedIoTests.Run(check);
         check(NativeHid.MutexName("TEST-HID-Path") == NativeHid.MutexName("test-hid-path"), "HID ownership key is case independent");
         check(NativeHid.MutexName("test-hid-path") != NativeHid.MutexName("another-path"), "Different HID interfaces have distinct ownership keys");
@@ -416,7 +458,8 @@ internal sealed class NativeHid : IDisposable
                     {
                         if (handle.IsInvalid) continue;
                         Attributes attributes = new Attributes { Size = Marshal.SizeOf(typeof(Attributes)) };
-                        if (!HidD_GetAttributes(handle, ref attributes) || attributes.VendorId != 0x0B05 || !KnownMotherboard(attributes.ProductId)) continue;
+                        AuraUsbFamily family;
+                        if (!HidD_GetAttributes(handle, ref attributes) || attributes.VendorId != 0x0B05 || !DirectAuraWorker.TryFamily(attributes.ProductId,out family)) continue;
                         IntPtr preparsed;
                         if (!HidD_GetPreparsedData(handle, out preparsed)) continue;
                         try
@@ -435,7 +478,6 @@ internal sealed class NativeHid : IDisposable
         finally { SetupDiDestroyDeviceInfoList(set); }
         return found;
     }
-    private static bool KnownMotherboard(ushort pid) { return pid == 0x18F3 || pid == 0x1939 || pid == 0x19AF || pid == 0x1AA6 || pid == 0x1BED; }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public int Size; public Guid Guid; public int Flags; public IntPtr Reserved; }
     [StructLayout(LayoutKind.Sequential)] private struct Attributes { public int Size; public ushort VendorId, ProductId, Version; }
     [StructLayout(LayoutKind.Sequential)] private struct Caps

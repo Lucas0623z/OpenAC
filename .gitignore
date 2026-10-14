@@ -27,3 +27,5 @@ render-error.txt
 peripheral-final-readonly.json
 *-evidence.json
 /installer/artifacts/
+/.preview/
+/OpenAC.PreviewHost*.exe.config

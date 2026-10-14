@@ -3,20 +3,28 @@ $ErrorActionPreference = 'Stop'
 $compiler64 = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $compiler32 = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
 & (Join-Path $PSScriptRoot 'build.ps1')
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'DirectAuraWorker.exe')) (Join-Path $PSScriptRoot 'DirectAuraWorker.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'DirectAuraWorker.exe')) (Join-Path $PSScriptRoot 'DirectAuraWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Direct Aura adapter build failed.' }
-& $compiler32 /nologo /target:exe /platform:x86 /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll ('/out:' + (Join-Path $PSScriptRoot 'SDKWorker.exe')) (Join-Path $PSScriptRoot 'SDKWorker.cs')
+& $compiler32 /nologo /target:exe /platform:x86 /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll ('/out:' + (Join-Path $PSScriptRoot 'SDKWorker.exe')) (Join-Path $PSScriptRoot 'SDKWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Installed SDK adapter build failed.' }
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'GearLinkWorker.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'GearLinkWorker.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'GearLinkAuraFrames.cs') (Join-Path $PSScriptRoot 'GearLinkHeadsetLighting.cs') (Join-Path $PSScriptRoot 'GearLinkLightingFamilies.cs') (Join-Path $PSScriptRoot 'GearLinkLightingModelFacts.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Direct peripheral adapter build failed.' }
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll /r:System.Management.dll /r:System.Numerics.dll ('/out:' + (Join-Path $PSScriptRoot 'StorageWorker.exe')) (Join-Path $PSScriptRoot 'StorageWorker.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll /r:System.Management.dll /r:System.Numerics.dll ('/out:' + (Join-Path $PSScriptRoot 'StorageWorker.exe')) (Join-Path $PSScriptRoot 'StorageWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Storage adapter build failed.' }
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'AudioEndpointWorker.exe')) (Join-Path $PSScriptRoot 'AudioEndpointWorker.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'AudioEndpointWorker.exe')) (Join-Path $PSScriptRoot 'AudioEndpointWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Windows audio adapter build failed.' }
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'DiscoveryWorker.exe')) (Join-Path $PSScriptRoot 'DiscoveryWorker.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'DiscoveryWorker.exe')) (Join-Path $PSScriptRoot 'DiscoveryWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Read-only device discovery build failed.' }
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'NotebookWorker.exe')) (Join-Path $PSScriptRoot 'NotebookWorker.cs') (Join-Path $PSScriptRoot 'NotebookControlModel.cs') (Join-Path $PSScriptRoot 'NotebookControl.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Notebook status adapter build failed.' }
+& $compiler32 /nologo /target:exe /platform:x86 /optimize+ /main:OpenAcFanNative.FanNativeWorker /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'FanNativeWorker.exe')) (Join-Path $PSScriptRoot 'FanNativeRules.cs') (Join-Path $PSScriptRoot 'FanNativeTransport.cs') (Join-Path $PSScriptRoot 'FanNativeProcessImage.cs') (Join-Path $PSScriptRoot 'FanNativeWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Bounded motherboard fan read adapter build failed.' }
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /main:WindowsBrightnessWorkerProgram /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'WindowsBrightnessWorker.exe')) (Join-Path $PSScriptRoot 'WindowsBrightness.cs') (Join-Path $PSScriptRoot 'WindowsBrightnessWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Bounded Windows brightness adapter build failed.' }
+& $compiler32 /nologo /target:exe /platform:x86 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'TelemetryWorker.exe')) (Join-Path $PSScriptRoot 'TelemetryWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Installed AIO telemetry adapter build failed.' }
 if ($RunChecks -or $HardwareReadOnlyChecks) {
- & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'MockWorker.exe')) (Join-Path $PSScriptRoot 'MockWorker.cs')
+ & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'MockWorker.exe')) (Join-Path $PSScriptRoot 'MockWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
  if ($LASTEXITCODE -ne 0) { throw 'Mock worker build failed.' }
  foreach ($testName in @('SupervisorTests','ReadOnlyIntegrationTests')) {
   & $compiler64 /nologo /target:exe /platform:x64 ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) ('/out:' + (Join-Path $PSScriptRoot ($testName + '.exe'))) (Join-Path $PSScriptRoot ($testName + '.cs'))
@@ -24,6 +32,10 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  }
  & (Join-Path $PSScriptRoot 'SupervisorTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Worker supervisor checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'WorkerTextProtocolTests.exe')) (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocolTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Worker text protocol checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WorkerTextProtocolTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Worker text protocol checks failed.' }
  & (Join-Path $PSScriptRoot 'DirectAuraWorker.exe') --self-test
  if ($LASTEXITCODE -ne 0) { throw 'Direct Aura protocol checks failed.' }
  & (Join-Path $PSScriptRoot 'GearLinkWorker.exe') --self-test
@@ -34,7 +46,7 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Windows audio protocol checks failed.' }
  & (Join-Path $PSScriptRoot 'DiscoveryWorker.exe') --self-test
  if ($LASTEXITCODE -ne 0) { throw 'Read-only discovery checks failed.' }
- & $compiler32 /nologo /target:exe /platform:x86 /main:SDKWorkerTests /r:System.Web.Extensions.dll /r:System.Drawing.dll ('/out:' + (Join-Path $PSScriptRoot 'SDKWorkerTests.exe')) (Join-Path $PSScriptRoot 'SDKWorker.cs') (Join-Path $PSScriptRoot 'SDKWorkerTests.cs')
+ & $compiler32 /nologo /target:exe /platform:x86 /main:SDKWorkerTests /r:System.Web.Extensions.dll /r:System.Drawing.dll ('/out:' + (Join-Path $PSScriptRoot 'SDKWorkerTests.exe')) (Join-Path $PSScriptRoot 'SDKWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'SDKWorkerTests.cs')
  if ($LASTEXITCODE -ne 0) { throw 'Installed SDK checks build failed.' }
  & (Join-Path $PSScriptRoot 'SDKWorkerTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Installed SDK setter checks failed.' }
@@ -66,6 +78,110 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Local update catalog checks build failed.' }
  & (Join-Path $PSScriptRoot 'LocalUpdateCatalogTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Local update catalog checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) ('/out:' + (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.exe')) (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'GitHub update checks build failed.' }
+ & (Join-Path $PSScriptRoot 'GitHubUpdateCatalogTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'GitHub update checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /main:NotebookWorkerTests /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'NotebookWorkerTests.exe')) (Join-Path $PSScriptRoot 'NotebookWorker.cs') (Join-Path $PSScriptRoot 'NotebookControlModel.cs') (Join-Path $PSScriptRoot 'NotebookControl.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'NotebookWorkerTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook status checks build failed.' }
+ & (Join-Path $PSScriptRoot 'NotebookWorkerTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook status checks failed.' }
+& $compiler64 /nologo /target:exe /platform:x64 /main:NotebookControlTests /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'NotebookControlTests.exe')) (Join-Path $PSScriptRoot 'NotebookWorker.cs') (Join-Path $PSScriptRoot 'NotebookControlModel.cs') (Join-Path $PSScriptRoot 'NotebookControl.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'NotebookControlTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook control checks build failed.' }
+ & (Join-Path $PSScriptRoot 'NotebookControlTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook control checks failed.' }
+ & $compiler32 /nologo /target:exe /platform:x86 /main:FanNativeTests /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'FanNativeTests.exe')) (Join-Path $PSScriptRoot 'FanNativeRules.cs') (Join-Path $PSScriptRoot 'FanNativeTransport.cs') (Join-Path $PSScriptRoot 'FanNativeProcessImage.cs') (Join-Path $PSScriptRoot 'FanNativeWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'FanNativeTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Bounded fan reader pure checks build failed.' }
+ & (Join-Path $PSScriptRoot 'FanNativeTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Bounded fan reader pure checks failed.' }
+ & $compiler32 /nologo /target:exe /platform:x86 /main:FanNativeMainSdkTests /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'FanNativeMainSdkTests.exe')) (Join-Path $PSScriptRoot 'FanModeWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'FanNativeMainSdkTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Main SDK fan facts checks build failed.' }
+ & (Join-Path $PSScriptRoot 'FanNativeMainSdkTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Main SDK fan facts checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'AuraAnimationTests.exe')) (Join-Path $PSScriptRoot 'AuraSyncCoordinator.cs') (Join-Path $PSScriptRoot 'GearLinkLightingModelFacts.cs') (Join-Path $PSScriptRoot 'AuraAnimation.cs') (Join-Path $PSScriptRoot 'AuraAnimationTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Shared-clock Aura checks build failed.' }
+ & (Join-Path $PSScriptRoot 'AuraAnimationTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Shared-clock Aura checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'WindowsBrightnessTests.exe')) (Join-Path $PSScriptRoot 'WindowsBrightness.cs') (Join-Path $PSScriptRoot 'WindowsBrightnessTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows brightness checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsBrightnessTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows brightness checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.exe')) (Join-Path $PSScriptRoot 'AsusDriverCatalog.cs') (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'ASUS public catalog checks build failed.' }
+ & (Join-Path $PSScriptRoot 'AsusDriverCatalogTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'ASUS public catalog checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'WindowsTelemetryTests.exe')) (Join-Path $PSScriptRoot 'WindowsTelemetry.cs') (Join-Path $PSScriptRoot 'WindowsTelemetryTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows telemetry checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsTelemetryTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows telemetry checks failed.' }
+ & $compiler32 /nologo /target:exe /platform:x86 /main:TelemetryWorkerTests /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'TelemetryWorkerTests.exe')) (Join-Path $PSScriptRoot 'TelemetryWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'TelemetryWorkerTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Installed telemetry checks build failed.' }
+ & (Join-Path $PSScriptRoot 'TelemetryWorkerTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Installed telemetry checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'MonitoringTests.exe')) (Join-Path $PSScriptRoot 'MonitoringTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Monitoring integration checks build failed.' }
+ & (Join-Path $PSScriptRoot 'MonitoringTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Monitoring integration checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/out:' + (Join-Path $PSScriptRoot 'AuraSyncCoordinatorTests.exe')) (Join-Path $PSScriptRoot 'AuraSyncCoordinator.cs') (Join-Path $PSScriptRoot 'GearLinkLightingModelFacts.cs') (Join-Path $PSScriptRoot 'AuraSyncCoordinatorTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Aura synchronization checks build failed.' }
+ & (Join-Path $PSScriptRoot 'AuraSyncCoordinatorTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Aura synchronization checks failed.' }
+ & $compiler32 /nologo /target:exe /platform:x86 /main:FanModeWorkerTests /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'FanModeWorkerTests.exe')) (Join-Path $PSScriptRoot 'FanModeWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'FanModeWorkerTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Desktop fan protocol checks build failed.' }
+ & (Join-Path $PSScriptRoot 'FanModeWorkerTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Desktop fan protocol checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'WindowsPowerTests.exe')) (Join-Path $PSScriptRoot 'WindowsPower.cs') (Join-Path $PSScriptRoot 'WindowsPowerTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows power checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsPowerTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows power checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'WindowsToolsTests.exe')) (Join-Path $PSScriptRoot 'WindowsToolsTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows tools UI checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsToolsTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows tools UI checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'WindowsDisplayTests.exe')) (Join-Path $PSScriptRoot 'WindowsDisplay.cs') (Join-Path $PSScriptRoot 'WindowsDisplayTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows display checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsDisplayTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows display checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /main:PeripheralLightingTests ('/out:' + (Join-Path $PSScriptRoot 'PeripheralLightingTests.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'GearLinkAuraFrames.cs') (Join-Path $PSScriptRoot 'GearLinkHeadsetLighting.cs') (Join-Path $PSScriptRoot 'GearLinkLightingFamilies.cs') (Join-Path $PSScriptRoot 'GearLinkLightingModelFacts.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs') (Join-Path $PSScriptRoot 'PeripheralLightingTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Peripheral lighting checks build failed.' }
+ & (Join-Path $PSScriptRoot 'PeripheralLightingTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Peripheral lighting checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'WindowsDisplayGuiTests.exe')) (Join-Path $PSScriptRoot 'WindowsDisplayGuiTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows display UI checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsDisplayGuiTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows display UI checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /r:System.Management.dll ('/out:' + (Join-Path $PSScriptRoot 'WindowsBatteryTests.exe')) (Join-Path $PSScriptRoot 'WindowsBattery.cs') (Join-Path $PSScriptRoot 'WindowsBatteryTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows battery checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsBatteryTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows battery checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'WindowsBatteryGuiTests.exe')) (Join-Path $PSScriptRoot 'WindowsBatteryGuiTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows battery UI checks build failed.' }
+ & (Join-Path $PSScriptRoot 'WindowsBatteryGuiTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Windows battery UI checks failed.' }
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'NotebookGuiTests.exe')) (Join-Path $PSScriptRoot 'NotebookGuiTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks build failed.' }
+ & (Join-Path $PSScriptRoot 'NotebookGuiTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks failed.' }
+
+ foreach ($taskProtocolTest in @('MouseLightingProtocolTests','MouseSensorProtocolTests','MouseButtonActionProtocolTests','MouseProtocolIntegrationTests','GearLinkAuraFrameTests','GearLinkLightingFamilyTests','HeadsetEffectReplacementTests','GearLinkHeadsetLightingTests')) {
+  & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/main:' + $taskProtocolTest) ('/out:' + (Join-Path $PSScriptRoot ($taskProtocolTest + '.exe'))) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'GearLinkAuraFrames.cs') (Join-Path $PSScriptRoot 'GearLinkHeadsetLighting.cs') (Join-Path $PSScriptRoot 'GearLinkLightingFamilies.cs') (Join-Path $PSScriptRoot 'GearLinkLightingModelFacts.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs') (Join-Path $PSScriptRoot ($taskProtocolTest + '.cs'))
+  if ($LASTEXITCODE -ne 0) { throw ('Mouse protocol test build failed: ' + $taskProtocolTest) }
+  & (Join-Path $PSScriptRoot ($taskProtocolTest + '.exe'))
+  if ($LASTEXITCODE -ne 0) { throw ('Mouse protocol tests failed: ' + $taskProtocolTest) }
+ }
+ foreach ($taskGuiTest in @('MousePerformanceGuiTests','OriginalPixelLayoutTests','GearPowerGuiTests','KeyboardViewsGuiTests','KeyboardLightingGuiTests','HeadsetAudioGuiTests','MotherboardGuiTests','LcdSettingsGuiTests','LcdMonitorGuiTests','GameLibraryGuiTests','ReceiverGuiTests','ScenarioGuiTests','GameFirstGuiTests','MacroGuiTests','checks\MouseButtonsChecks','checks\MouseLightingChecks','checks\MouseCalibrationZoneChecks','checks\MousePageLifecycleChecks','MouseCalibrationWorkflowTests','DeviceHotplugTests','AuraAnimationGuiTests','NotebookControlGuiTests','FanNativeGuiTests','WindowsBrightnessGuiTests','SharedWriteBoundaryTests')) {
+  $taskGuiTestExecutable = Join-Path $PSScriptRoot ((Split-Path -Leaf $taskGuiTest) + '.exe')
+  $taskGuiTestSources = @((Join-Path $PSScriptRoot ($taskGuiTest + '.cs')))
+  if ($taskGuiTest -eq 'SharedWriteBoundaryTests') { $taskGuiTestSources += (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') }
+  & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + $taskGuiTestExecutable) $taskGuiTestSources
+  if ($LASTEXITCODE -ne 0) { throw ($taskGuiTest + ' build failed.') }
+  & $taskGuiTestExecutable
+  if ($LASTEXITCODE -ne 0) { throw ($taskGuiTest + ' failed.') }
+ }
+ & $compiler64 /nologo /target:exe /platform:x64 /define:HEADSET_GUI /main:HeadsetEffectReplacementGuiTests /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + (Join-Path $PSScriptRoot 'HeadsetEffectReplacementGuiTests.exe')) (Join-Path $PSScriptRoot 'HeadsetEffectReplacementTests.cs')
+ if ($LASTEXITCODE -ne 0) { throw 'Headset effect replacement GUI build failed.' }
+ & (Join-Path $PSScriptRoot 'HeadsetEffectReplacementGuiTests.exe')
+ if ($LASTEXITCODE -ne 0) { throw 'Headset effect replacement GUI checks failed.' }
 }
 if ($HardwareReadOnlyChecks) {
  & (Join-Path $PSScriptRoot 'ReadOnlyIntegrationTests.exe')

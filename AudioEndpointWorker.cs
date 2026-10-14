@@ -18,7 +18,7 @@ internal static class AudioEndpointWorker {
   Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);
   if(args.Contains("--self-test")){SelfTest();return 0;}
   if(args.Contains("--inventory")){Console.WriteLine(Json.Serialize(Obj("source",Source,"endpoints",Enumerate(true))));return 0;}
-  string line;while((line=Console.ReadLine())!=null){object id=null;try{
+  string line;while((line=OpenAc.WorkerTextProtocol.ReadLine())!=null){object id=null;try{
    if(line.Length>65536)throw new ArgumentException("Request is too large.");var request=Json.Deserialize<Dictionary<string,object>>(line);if(request==null)throw new ArgumentException("A request object is required.");request.TryGetValue("id",out id);
    Console.WriteLine(Json.Serialize(Obj("id",id,"ok",true,"data",Handle(request))));
   }catch(Exception ex){Console.WriteLine(Json.Serialize(Obj("id",id,"ok",false,"error",Obj("code",ex is ArgumentException?"invalid_request":"audio_endpoint_error","message",ex.Message))));}}

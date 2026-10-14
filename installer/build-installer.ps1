@@ -28,7 +28,7 @@ function Assert-NoReparse([string]$path) {
 Assert-NoReparse $payloadRoot
 Assert-NoReparse $outputRoot
 $runtime=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'RuntimeFiles.json') -Raw|ConvertFrom-Json
-if ($runtime.schemaVersion -ne 1 -or $runtime.files.Count -ne 16 -or @($runtime.files|Select-Object -Unique).Count -ne 16) { throw 'Unexpected installer runtime allowlist.' }
+if ($runtime.schemaVersion -ne 1 -or $runtime.files.Count -ne 19 -or @($runtime.files|Select-Object -Unique).Count -ne 19) { throw 'Unexpected installer runtime allowlist.' }
 $records=@()
 [long]$totalBytes=0
 foreach ($relative in $runtime.files) {
@@ -92,7 +92,7 @@ try {
     if (-not $verify.WaitForExit(15000)) { $verify.Kill(); throw 'Installer verification timed out.' }
     $verificationText=$verify.StandardOutput.ReadToEnd()
     $verification=$verificationText|ConvertFrom-Json
-    if ($verify.ExitCode -ne 0 -or $verification.ok -ne $true -or $verification.product -ne 'org.openac.community.preview' -or $verification.version -ne $Version -or $verification.files -ne 16 -or $verification.installed -ne $false -or $verification.hardwareExecuted -ne $false) { throw ('Installer verification failed: '+$verificationText+$verify.StandardError.ReadToEnd()) }
+    if ($verify.ExitCode -ne 0 -or $verification.ok -ne $true -or $verification.product -ne 'org.openac.community.preview' -or $verification.version -ne $Version -or $verification.files -ne 19 -or $verification.installed -ne $false -or $verification.hardwareExecuted -ne $false) { throw ('Installer verification failed: '+$verificationText+$verify.StandardError.ReadToEnd()) }
     [IO.File]::WriteAllText((Join-Path $outputRoot 'VERIFY.json'),$verificationText,$utf8)
 } finally { $verify.Dispose() }
 $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()

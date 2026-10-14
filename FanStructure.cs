@@ -9,69 +9,120 @@ namespace RogControl {
   string fanXpertChannel="CPU Fan";
 
   void OriginalFanXpertPage() {
-   var heading=Label("FAN XPERT 4",26,text,FontWeights.Normal);heading.Margin=new Thickness(0,0,0,22);content.Children.Add(heading);
-   var toolbar=new Grid { Margin=new Thickness(85,65,0,20) };
-   toolbar.ColumnDefinitions.Add(new ColumnDefinition());toolbar.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
-   var tools=new StackPanel { Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center };
-   tools.Children.Add(FanPendingButton("ON","启用 Fan Xpert 4",54));
-   tools.Children.Add(FanPendingButton("▣","保存风扇配置",34));
-   tools.Children.Add(FanPendingButton("▤","载入风扇配置",34));
-   var ai=new StackPanel { Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(16,0,10,0) };
-   var aiLabel=Label("AI Cooling II",13,text);aiLabel.Margin=new Thickness(0,0,8,0);aiLabel.VerticalAlignment=VerticalAlignment.Center;ai.Children.Add(aiLabel);
-   ai.Children.Add(FanPendingButton("OFF","AI Cooling II 开关",54));tools.Children.Add(ai);
-   tools.Children.Add(FanPendingButton("↺","重置",34));
-   foreach(string mode in new[]{"静音","标准","Turbo","全速"}) {
-    var modeButton=FanPendingButton("",mode,40);modeButton.Content=FanRotor(24,muted);modeButton.Margin=new Thickness(3,0,3,0);tools.Children.Add(modeButton);
+   var heading=Label("FAN XPERT 4",26,text,FontWeights.SemiBold);heading.Margin=new Thickness(-22,-6,0,28);heading.HorizontalAlignment=HorizontalAlignment.Left;heading.RenderTransform=new ScaleTransform(1.16,1);content.Children.Add(heading);PinPageHeader(1,"fan-xpert");
+   // The authored columns retain their positions at smaller widths through scrolling.
+   // Neither the official screenshot nor the private COM probe supplies live UI values.
+   var fanContent=new StackPanel{Width=1246};
+   var horizontal=new ScrollViewer{Content=fanContent,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalContentAlignment=HorizontalAlignment.Left};
+   var toolbar=new Canvas{Width=1078,Height=70,Margin=new Thickness(85,67,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+   FanPlace(toolbar,FanLayoutSwitch("启用 Fan Xpert 4"),2,24);
+   var save=FanPendingButton("","保存风扇配置",30);save.Height=30;save.Padding=new Thickness(0);save.Content=FanFileIcon(false);FanPlace(toolbar,save,77,0);
+   var load=FanPendingButton("","载入风扇配置",30);load.Height=30;load.Padding=new Thickness(0);load.Content=FanFileIcon(true);FanPlace(toolbar,load,77,40);
+   FanPlace(toolbar,FanLayoutSwitch("AI Cooling II 开关"),129,9);
+   var aiLabel=Label("AI Cooling II",13,text);aiLabel.Margin=new Thickness(0);FanPlace(toolbar,aiLabel,189,9);
+   var help=FanPendingButton("","AI Cooling II 说明",22);help.Height=22;help.BorderThickness=new Thickness(0);help.Padding=new Thickness(0);var helpIcon=new Grid{Width=22,Height=22};helpIcon.Children.Add(new Ellipse{Width=17,Height=17,Stroke=muted,StrokeThickness=1,Fill=Brushes.Transparent});var helpLabel=Label("i",11,muted);helpLabel.Margin=new Thickness(0);helpLabel.HorizontalAlignment=HorizontalAlignment.Center;helpLabel.VerticalAlignment=VerticalAlignment.Center;helpIcon.Children.Add(helpLabel);help.Content=helpIcon;FanPlace(toolbar,help,338,8);
+   var reset=FanPendingButton("重置","重置",104);reset.Height=20;reset.Padding=new Thickness(0);FanPlace(toolbar,reset,371,8);
+   string[] presets={"静音","标准","Turbo","全速"};
+   for(int index=0;index<presets.Length;index++) {
+    var preset=FanPendingButton("",presets[index],70);preset.Height=70;preset.Padding=new Thickness(0);preset.BorderThickness=new Thickness(0);
+    var frame=new Grid{Width=70,Height=70};frame.Children.Add(FanBevel(70,70,false));frame.Children.Add(FanWindIcon(index,44));preset.Content=frame;FanPlace(toolbar,preset,505+90*index,0);
    }
-   toolbar.Children.Add(tools);
-   var tuning=FanPendingButton("风扇调校","风扇调校",96);tuning.Margin=new Thickness(12,0,0,0);Grid.SetColumn(tuning,1);toolbar.Children.Add(tuning);
-   content.Children.Add(toolbar);
+   var tuning=FanPendingButton("","风扇调校",136);tuning.Height=32;tuning.Padding=new Thickness(0);tuning.BorderThickness=new Thickness(0);
+   var tuningFrame=new Grid{Width=136,Height=32};tuningFrame.Children.Add(FanBevel(136,32,true));var tuningLabel=Label("风扇调校",14,text,FontWeights.SemiBold);tuningLabel.Margin=new Thickness(0);tuningLabel.HorizontalAlignment=HorizontalAlignment.Center;tuningLabel.VerticalAlignment=VerticalAlignment.Center;tuningFrame.Children.Add(tuningLabel);tuning.Content=tuningFrame;FanPlace(toolbar,tuning,941,18);fanContent.Children.Add(toolbar);
+   fanContent.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(0,26,0,0)});
 
-   var body=new Grid { Margin=new Thickness(85,80,0,0) };
-   body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(200)});
-   body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(400)});
-   body.ColumnDefinitions.Add(new ColumnDefinition());
-   var fanList=new StackPanel { Margin=new Thickness(0,0,16,0) };
-   foreach(string name in new[]{"CPU Fan","Chassis Fan 1","Chassis Fan 2","Radiator Fan 1","Radiator Fan 2","Water Pump+ 1","Water Pump+ 2","VRM HS Fan"}) {
-    string target=name;
-    var select=FanFlatButton(name,()=>{fanXpertChannel=target;content.Children.Clear();OriginalFanXpertPage();});
-    select.HorizontalContentAlignment=HorizontalAlignment.Left;select.Margin=new Thickness(0,0,0,5);select.Padding=new Thickness(12,14,8,14);
-    select.FontSize=12;select.Foreground=target==fanXpertChannel?accent:text;
-    select.BorderBrush=target==fanXpertChannel?accent:border;select.BorderThickness=new Thickness(target==fanXpertChannel?2:1,0,0,0);
-    fanList.Children.Add(select);
+   var body=new Grid{Width=1075,Height=490,Margin=new Thickness(85,44,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+   foreach(double width in new[]{200.0,40.0,353.0,32.0,450.0})body.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(width)});
+   var fanList=new StackPanel();var listHeading=new Grid{Margin=new Thickness(0,0,0,15)};var listLabel=Label("风扇列表",15,muted);listLabel.Margin=new Thickness(0);listHeading.Children.Add(listLabel);var refresh=FanFlatButton("刷新",async()=>await ReadFanNative());refresh.Tag="fan-native-read";refresh.Width=52;refresh.Height=24;refresh.Padding=new Thickness(0);refresh.HorizontalAlignment=HorizontalAlignment.Right;refresh.IsEnabled=!render&&!closing&&!busy&&!AuraSyncBusy;refresh.ToolTip=FanNativeReadDescription;listHeading.Children.Add(refresh);fanList.Children.Add(listHeading);
+   var items=new StackPanel{Margin=new Thickness(10,0,5,0)};var observedNames=CurrentFanNativeNames();bool scrollList=observedNames.Length>8;
+   foreach(string name in observedNames) {
+    string target=name;bool selectedChannel=target==fanXpertChannel;
+    var select=FanFlatButton("",()=>{fanXpertChannel=target;content.Children.Clear();fixedPageHeader.Children.Clear();OriginalFanXpertPage();});
+    select.Width=scrollList?166:184;select.Height=36;select.Margin=new Thickness(0,0,0,4);select.Padding=new Thickness(12,0,8,0);select.HorizontalContentAlignment=HorizontalAlignment.Stretch;select.Background=panel;select.BorderThickness=new Thickness(selectedChannel?2:1);select.BorderBrush=selectedChannel?Brush("#00B4DC"):border;
+    var row=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};row.Children.Add(FanRotor(18,selectedChannel?text:Brush("#707070")));
+    var nameLabel=Label(name,13,selectedChannel?text:Brush("#707070"));nameLabel.Margin=new Thickness(12,0,0,0);nameLabel.MaxWidth=scrollList?114:132;nameLabel.TextTrimming=TextTrimming.CharacterEllipsis;nameLabel.ToolTip=name;nameLabel.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(nameLabel);select.Content=row;select.ToolTip=FanNativeReadDescription;items.Children.Add(select);
    }
-   body.Children.Add(fanList);
+   fanList.Children.Add(new ScrollViewer{Content=items,Height=320,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalContentAlignment=HorizontalAlignment.Stretch,Tag="fan-native-list"});fanList.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(0,44,0,0)});body.Children.Add(new Border{Height=400,VerticalAlignment=VerticalAlignment.Top,Child=fanList});body.Children.Add(new Border{Width=1,Height=366,Background=border,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,32,0,0)});
+   var curve=new Canvas{Width=353,Height=490};var modes=new StackPanel{Orientation=Orientation.Horizontal};
+   var smart=FanLayoutRadio("智能模式");smart.Width=146;smart.Margin=new Thickness(0,0,26,0);modes.Children.Add(smart);modes.Children.Add(FanLayoutRadio("固定转速模式"));FanPlace(curve,modes,0,0);
+   var rpm=new Grid{Width=268,Height=24};rpm.ColumnDefinitions.Add(new ColumnDefinition());rpm.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+   var rpmLegend=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};rpmLegend.Children.Add(new Ellipse{Width=13,Height=13,Fill=accent,Margin=new Thickness(0,0,5,0)});var rpmCaption=Label("Current RPM",12,text);rpmCaption.Margin=new Thickness(0);rpmLegend.Children.Add(rpmCaption);rpm.Children.Add(rpmLegend);
+   var rpmValue=Label("— rpm",12,text);rpmValue.Margin=new Thickness(0);rpmValue.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(rpmValue,1);rpm.Children.Add(rpmValue);FanPlace(curve,rpm,40,36);FanPlace(curve,FanXpertCoordinateGrid(),12,93);
+   var sensor=new StackPanel{Orientation=Orientation.Horizontal};var sources=FanPendingButton("","温度来源",40);sources.Height=24;sources.Padding=new Thickness(0);sources.Content=FanSensorIcon();sensor.Children.Add(sources);sensor.Children.Add(new Ellipse{Width=12,Height=12,Fill=accent,Margin=new Thickness(12,0,8,0),VerticalAlignment=VerticalAlignment.Top});
+   var sensorReading=new StackPanel();var cpu=Label("CPU",12,text);cpu.Margin=new Thickness(0,0,0,2);sensorReading.Children.Add(cpu);var temperature=Label("— °C",11,text);temperature.Margin=new Thickness(0);sensorReading.Children.Add(temperature);sensor.Children.Add(sensorReading);FanPlace(curve,sensor,0,430);Grid.SetColumn(curve,2);body.Children.Add(curve);
+   var details=new Canvas{Width=450,Height=490};var mini=new Canvas{Width=110,Height=110,Background=Brush("#161616")};mini.Children.Add(new Line{X1=0,Y1=0,X2=0,Y2=110,Stroke=border,StrokeThickness=1});mini.Children.Add(new Line{X1=0,Y1=110,X2=110,Y2=110,Stroke=border,StrokeThickness=1});FanPlace(details,mini,0,43);
+   var limits=new StackPanel{Width=160};limits.Children.Add(FanRangeBlock("最大速度:","— (RPM)"));limits.Children.Add(FanRangeBlock("最小速度:","— (RPM)"));limits.Children.Add(FanRangeBlock("可控范围:","—"));FanPlace(details,limits,140,43);FanPlace(details,FanLayoutSpeedTable(),0,204);
+   var eq=new CheckBox{Content="EQ 模式",IsThreeState=true,IsChecked=null,IsEnabled=false,Foreground=muted,FontSize=14,ToolTip="EQ 状态未知 · 设置不可用"};eq.Template=FanUnknownCheckTemplate();ToolTipService.SetShowOnDisabled(eq,true);FanPlace(details,eq,2,338);
+   FanPlace(details,FanLayoutDelay("风扇加速时间"),0,384);FanPlace(details,FanLayoutDelay("风扇减速时间"),242,384);Grid.SetColumn(details,4);body.Children.Add(details);fanContent.Children.Add(body);content.Children.Add(horizontal);
+  }
 
-   var curve=new StackPanel { Width=360,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,18,0) };
-   var modes=new StackPanel { Orientation=Orientation.Horizontal,Margin=new Thickness(0,5,0,18) };
-   modes.Children.Add(FanPendingRadio("智能模式"));modes.Children.Add(FanPendingRadio("固定转速模式"));curve.Children.Add(modes);
-   var rpm=new Grid { Margin=new Thickness(0,0,0,18) };
-   var rpmCaption=Label("Current RPM",13,muted);rpmCaption.Margin=new Thickness(0);rpm.Children.Add(rpmCaption);
-   var rpmValue=Label("—",28,accent);rpmValue.HorizontalAlignment=HorizontalAlignment.Right;rpmValue.Margin=new Thickness(0,-5,0,0);rpm.Children.Add(rpmValue);curve.Children.Add(rpm);
-   curve.Children.Add(FanCoordinateGrid(300,true));
-   var state=Paragraph("当前转速、风扇曲线与控制状态尚未读取。",11,muted);state.Margin=new Thickness(0,8,0,0);curve.Children.Add(state);
-   Grid.SetColumn(curve,1);body.Children.Add(curve);
+  void FanPlace(Canvas parent,UIElement child,double x,double y){Canvas.SetLeft(child,x);Canvas.SetTop(child,y);parent.Children.Add(child);}
 
-   var details=new StackPanel { Width=450,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(18,0,0,0) };
-   var speedOverview=new Grid { Margin=new Thickness(0,4,0,10) };
-   speedOverview.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(205)});
-   speedOverview.ColumnDefinitions.Add(new ColumnDefinition());
-   var limits=new StackPanel { Margin=new Thickness(0,0,25,0) };
-   limits.Children.Add(FanUnknownMetric("最大速度","— RPM"));
-   limits.Children.Add(FanUnknownMetric("最小速度","— RPM"));
-   limits.Children.Add(FanUnknownMetric("可控范围","—"));speedOverview.Children.Add(limits);
-   var miniChart=(FrameworkElement)FanCoordinateGrid(110,false);miniChart.MinWidth=205;Grid.SetColumn(miniChart,1);speedOverview.Children.Add(miniChart);details.Children.Add(speedOverview);
-   var tableLabel=Label("PWM (%) / RPM",11,muted);tableLabel.Margin=new Thickness(0,12,0,0);details.Children.Add(tableLabel);
-   var speedTable=new Grid { Margin=new Thickness(0,10,0,14) };
-   for(int i=0;i<11;i++)speedTable.ColumnDefinitions.Add(new ColumnDefinition());
-   speedTable.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});speedTable.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
-   for(int i=0;i<11;i++){FanSpeedCell(speedTable,(i*10).ToString()+"%",0,i,true);FanSpeedCell(speedTable,"— RPM",1,i,false);}details.Children.Add(speedTable);
-   var eq=new CheckBox { Content="EQ 模式",IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,0,18),ToolTip="尚未接入风扇控制，模式状态未读取。" };ToolTipService.SetShowOnDisabled(eq,true);details.Children.Add(eq);
-   var delays=new Grid();delays.ColumnDefinitions.Add(new ColumnDefinition());delays.ColumnDefinitions.Add(new ColumnDefinition());
-   var acceleration=(FrameworkElement)FanUnknownDelay("风扇加速时间");acceleration.Margin=new Thickness(0,0,18,0);delays.Children.Add(acceleration);
-   var deceleration=(FrameworkElement)FanUnknownDelay("风扇减速时间");deceleration.Margin=new Thickness(18,0,0,0);Grid.SetColumn(deceleration,1);delays.Children.Add(deceleration);details.Children.Add(delays);
-   Grid.SetColumn(details,2);body.Children.Add(details);content.Children.Add(body);
-   var note=Paragraph("风扇设置尚未接通，调校和写入暂不可用。",11,muted);note.Margin=new Thickness(285,20,0,0);content.Children.Add(note);
+  FrameworkElement FanLayoutSwitch(string action) {
+   var button=FanPendingButton("",action,53);button.Height=21;button.Padding=new Thickness(0);
+   var box=new Grid{Width=49,Height=17};box.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(15)});box.ColumnDefinitions.Add(new ColumnDefinition());box.Children.Add(new Border{Width=13,Height=13,BorderBrush=muted,BorderThickness=new Thickness(1),Background=panel,VerticalAlignment=VerticalAlignment.Center});
+   var value=Label("—",10,muted);value.Margin=new Thickness(0);value.HorizontalAlignment=HorizontalAlignment.Center;value.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(value,1);box.Children.Add(value);button.Content=box;return button;
+  }
+
+  RadioButton FanLayoutRadio(string title) {
+   var radio=new RadioButton{Content=title,IsEnabled=false,Foreground=muted,FontSize=16,ToolTip="模式未知 · 设置不可用"};
+   var template=new ControlTemplate(typeof(RadioButton));var frame=new FrameworkElementFactory(typeof(StackPanel));frame.SetValue(StackPanel.OrientationProperty,Orientation.Horizontal);
+   var ring=new FrameworkElementFactory(typeof(Ellipse));ring.SetValue(Ellipse.WidthProperty,20.0);ring.SetValue(Ellipse.HeightProperty,20.0);ring.SetValue(Ellipse.StrokeProperty,muted);ring.SetValue(Ellipse.StrokeThicknessProperty,1.0);ring.SetValue(Ellipse.FillProperty,Brushes.Transparent);ring.SetValue(Ellipse.MarginProperty,new Thickness(0,0,12,0));ring.SetValue(Ellipse.VerticalAlignmentProperty,VerticalAlignment.Center);frame.AppendChild(ring);
+   var caption=new FrameworkElementFactory(typeof(ContentPresenter));caption.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);frame.AppendChild(caption);template.VisualTree=frame;radio.Template=template;ToolTipService.SetShowOnDisabled(radio,true);return radio;
+  }
+
+  ControlTemplate FanUnknownCheckTemplate() {
+   var template=new ControlTemplate(typeof(CheckBox));var row=new FrameworkElementFactory(typeof(StackPanel));row.SetValue(StackPanel.OrientationProperty,Orientation.Horizontal);
+   var box=new FrameworkElementFactory(typeof(Border));box.SetValue(Border.WidthProperty,20.0);box.SetValue(Border.HeightProperty,20.0);box.SetValue(Border.BorderBrushProperty,muted);box.SetValue(Border.BorderThicknessProperty,new Thickness(1));box.SetValue(Border.BackgroundProperty,Brushes.Transparent);box.SetValue(Border.MarginProperty,new Thickness(0,0,18,0));
+   var unknown=new FrameworkElementFactory(typeof(TextBlock));unknown.SetValue(TextBlock.TextProperty,"—");unknown.SetValue(TextBlock.FontSizeProperty,12.0);unknown.SetValue(TextBlock.ForegroundProperty,muted);unknown.SetValue(TextBlock.HorizontalAlignmentProperty,HorizontalAlignment.Center);unknown.SetValue(TextBlock.VerticalAlignmentProperty,VerticalAlignment.Center);box.AppendChild(unknown);row.AppendChild(box);var caption=new FrameworkElementFactory(typeof(ContentPresenter));caption.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);row.AppendChild(caption);template.VisualTree=row;return template;
+  }
+
+  UIElement FanRangeBlock(string caption,string value) {
+   var block=new StackPanel{Margin=new Thickness(0,0,0,8)};var title=Label(caption,12,text);title.Margin=new Thickness(0,0,0,2);block.Children.Add(title);var reading=Label(value,11,muted);reading.Margin=new Thickness(0);block.Children.Add(reading);return block;
+  }
+
+  UIElement FanLayoutDelay(string title) {
+   var section=new StackPanel{Width=216};section.Children.Add(FanUnknownMetric(title,"— 秒"));
+   var limits=new Grid{Margin=new Thickness(0,9,0,3)};var slow=Label("缓慢",11,muted);slow.Margin=new Thickness(0);limits.Children.Add(slow);var immediate=Label("立即",11,muted);immediate.Margin=new Thickness(0);immediate.HorizontalAlignment=HorizontalAlignment.Right;limits.Children.Add(immediate);section.Children.Add(limits);
+   // No thumb/value position is invented for an unknown delay.
+   var slider=new Slider{Width=216,Height=18,IsEnabled=false,ToolTip="时间未知 · 设置不可用",Minimum=0,Maximum=1};
+   var template=new ControlTemplate(typeof(Slider));var track=new FrameworkElementFactory(typeof(Border));track.SetValue(Border.HeightProperty,4.0);track.SetValue(Border.VerticalAlignmentProperty,VerticalAlignment.Center);track.SetValue(Border.BackgroundProperty,new LinearGradientBrush(Color.FromRgb(218,218,218),Color.FromRgb(78,157,151),0));template.VisualTree=track;slider.Template=template;ToolTipService.SetShowOnDisabled(slider,true);section.Children.Add(slider);return section;
+  }
+
+  FrameworkElement FanLayoutSpeedTable() {
+   var table=new Grid{Width=412,Height=80};table.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(60)});for(int index=0;index<11;index++)table.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(32)});table.RowDefinitions.Add(new RowDefinition{Height=new GridLength(40)});table.RowDefinitions.Add(new RowDefinition{Height=new GridLength(40)});
+   var pwm=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(9,0,0,0)};pwm.Children.Add(new Path{Data=Geometry.Parse("M 9,0 L 1,9 L 6,9 L 3,17 L 13,6 L 8,6 Z"),Fill=muted,Width=12,Height=17,Stretch=Stretch.Uniform});var p=Label(" (%)",10,muted);p.Margin=new Thickness(3,0,0,0);p.VerticalAlignment=VerticalAlignment.Center;pwm.Children.Add(p);
+   var rpm=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(7,0,0,0)};rpm.Children.Add(FanRotor(17,muted));var r=Label(" (rpm)",10,muted);r.Margin=new Thickness(2,0,0,0);r.VerticalAlignment=VerticalAlignment.Center;rpm.Children.Add(r);Grid.SetRow(rpm,1);table.Children.Add(pwm);table.Children.Add(rpm);
+   for(int index=0;index<11;index++)for(int row=0;row<2;row++){var label=Label(row==0?(index*10).ToString():"—",10,row==0?muted:text);label.Margin=new Thickness(0);label.HorizontalAlignment=HorizontalAlignment.Center;label.VerticalAlignment=VerticalAlignment.Center;var cell=new Border{Child=label};Grid.SetColumn(cell,index+1);Grid.SetRow(cell,row);table.Children.Add(cell);}var divider=new Border{Height=1,Background=border,VerticalAlignment=VerticalAlignment.Bottom};Grid.SetColumnSpan(divider,12);table.Children.Add(divider);
+   return new Border{Width=412,Height=80,BorderBrush=border,BorderThickness=new Thickness(1,1,0,1),Child=table};
+  }
+
+  FrameworkElement FanBevel(double width,double height,bool gradient) {
+   var geometry=Geometry.Parse(gradient?"M 0,0 L "+(width-8)+",0 L "+width+",8 L "+width+","+height+" L 0,"+height+" Z":"M 0,0 L "+width+",0 L "+width+","+(height-10)+" L "+(width-10)+","+height+" L 0,"+height+" Z");
+   return new Path{Data=geometry,Stroke=muted,StrokeThickness=1,Fill=gradient?(Brush)new LinearGradientBrush(Color.FromRgb(71,71,71),Color.FromRgb(21,21,21),90):panel};
+  }
+
+  FrameworkElement FanWindIcon(int preset,double size) {
+   var drawing=new DrawingGroup();var pen=new Pen(text,2.2){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};
+   if(preset==3){foreach(var data in new[]{"M 4,6 L 30,6","M 7,11 L 28,11","M 10,16 L 25,16","M 14,21 L 23,21","M 17,26 L 21,26"})drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse(data)));}
+   else {drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse("M 3,13 L 21,13 C 29,13 29,4 22,6")));drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse("M 5,18 L 16,18 C 22,18 22,25 17,24")));if(preset>0)drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse("M 2,9 L 12,9 C 18,9 18,3 14,3")));if(preset>1)drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse("M 7,23 L 27,23 C 32,23 32,29 27,29")));}
+   return new Image{Source=new DrawingImage(drawing),Width=size,Height=size,Stretch=Stretch.Uniform,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+  }
+
+  FrameworkElement FanFileIcon(bool folder) {
+   var drawing=new DrawingGroup();var pen=new Pen(muted,1.5);drawing.Children.Add(new GeometryDrawing(null,pen,Geometry.Parse(folder?"M 2,6 L 10,6 L 13,9 L 25,9 L 23,24 L 2,24 Z M 5,12 L 28,12 L 23,24":"M 3,2 L 22,2 L 26,6 L 26,27 L 3,27 Z M 8,3 L 8,11 L 21,11 L 21,3 M 8,26 L 8,17 L 21,17 L 21,26 M 17,4 L 17,9")));return new Image{Source=new DrawingImage(drawing),Width=21,Height=21,Stretch=Stretch.Uniform};
+  }
+
+  FrameworkElement FanSensorIcon() {
+   var drawing=new DrawingGroup();var pen=new Pen(muted,1.1);for(int index=0;index<3;index++){drawing.Children.Add(new GeometryDrawing(null,pen,new LineGeometry(new Point(2,4+index*5),new Point(5,4+index*5))));drawing.Children.Add(new GeometryDrawing(null,pen,new LineGeometry(new Point(9,4+index*5),new Point(23,4+index*5))));}return new Image{Source=new DrawingImage(drawing),Width=24,Height=16,Stretch=Stretch.Uniform};
+  }
+
+  FrameworkElement FanXpertCoordinateGrid() {
+   var canvas=new Canvas{Width=325,Height=304,Background=Brushes.Transparent};double left=32,top=29,w=252,h=252;
+   for(int index=0;index<=10;index++){double x=left+w*index/10,y=top+h*index/10;canvas.Children.Add(new Line{X1=x,Y1=top,X2=x,Y2=top+h,Stroke=border,StrokeThickness=0.8});canvas.Children.Add(new Line{X1=left,Y1=y,X2=left+w,Y2=y,Stroke=border,StrokeThickness=0.8});if(index>0){var tick=Label((index*10).ToString(),10,muted);tick.Margin=new Thickness(0);FanPlace(canvas,tick,x-8,top+h+4);}if(index<10){var tick=Label(((10-index)*10).ToString(),10,muted);tick.Margin=new Thickness(0);FanPlace(canvas,tick,6,y-7);}}
+   canvas.Children.Add(new Line{X1=left,Y1=top+h,X2=left+w,Y2=top+h,Stroke=text,StrokeThickness=1.2});canvas.Children.Add(new Line{X1=left,Y1=top,X2=left,Y2=top+h,Stroke=text,StrokeThickness=1.2});var pwm=Label("PWM(%)",10,muted);pwm.Margin=new Thickness(0);FanPlace(canvas,pwm,0,0);var temp=Label(" (°C)",10,muted);temp.Margin=new Thickness(0);FanPlace(canvas,temp,left+w+10,top+h+4);
+   // Axes alone are a layout, not a curve, live sample or calibrated range.
+   return canvas;
   }
 
   Button FanFlatButton(string title,Action click) {
@@ -92,11 +143,11 @@ namespace RogControl {
 
   Button FanPendingButton(string title,string action,double width) {
    var button=FanFlatButton(title,()=>{});button.Width=width;button.Height=38;button.IsEnabled=false;
-   button.ToolTip=action+"尚未接通；控件与开关状态未读取。";ToolTipService.SetShowOnDisabled(button,true);return button;
+   button.ToolTip=action+" · 设置不可用";ToolTipService.SetShowOnDisabled(button,true);return button;
   }
 
   RadioButton FanPendingRadio(string title) {
-   var radio=new RadioButton { Content=title,IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,18,0),FontSize=13,ToolTip="当前模式未读取，设置写入尚未接通。" };
+   var radio=new RadioButton { Content=title,IsEnabled=false,Foreground=muted,Margin=new Thickness(0,0,18,0),FontSize=13,ToolTip="设置不可用" };
    ToolTipService.SetShowOnDisabled(radio,true);return radio;
   }
 

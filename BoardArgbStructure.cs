@@ -15,43 +15,33 @@ namespace RogControl {
   // count, LED-count field, Done action and rescan action. ECB0 reports only
   // logical zones, so none of these physical-strip values may be fabricated.
   void OriginalBoardArgbPage(StackPanel target) {
-   var commands=Row();var read=Button(busy?"正在读取…":"读取主板通道",async()=>await ReadBoardArgbChannels());read.IsEnabled=!busy&&!render;commands.Children.Add(read);
-   var reset=Button("重新检测",()=>{});reset.IsEnabled=false;reset.ToolTip="接针重新检测接口尚未接通。";ToolTipService.SetShowOnDisabled(reset,true);commands.Children.Add(reset);target.Children.Add(commands);
-   target.Children.Add(Paragraph(boardArgbMessage,12,muted));
+   var body=new StackPanel{Name="BoardArgbSurface",Margin=new Thickness(35,24,21,0)};target.Children.Add(body);
+   var commands=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,34,25)};var info=Label("ⓘ",21,Brush("#B92842"));info.Margin=new Thickness(0,0,22,0);info.VerticalAlignment=VerticalAlignment.Center;info.ToolTip=boardArgbMessage;commands.Children.Add(info);var read=Button(busy?"正在扫描…":"重新扫描",async()=>await ReadBoardArgbChannels());read.Width=132;read.Height=34;read.Padding=new Thickness(10,4,10,4);read.Margin=new Thickness(0);read.IsEnabled=!busy&&!render;read.ToolTip="读取主板逻辑灯区；当前接头代数与灯珠数量未返回。";ToolTipService.SetShowOnDisabled(read,true);commands.Children.Add(read);body.Children.Add(commands);
+   var guidance=Paragraph("当使用分线或控制盒时，单个 ARGB 第二代接头最多只能支持四个第二代 ARGB 设备。",13,muted);guidance.Margin=new Thickness(0,0,0,13);body.Children.Add(guidance);var generationNote=Paragraph("当切换至 ARGB Gen 2 模式时，仅能侦测到 ARGB Gen 2 设备。",13,muted);generationNote.Margin=new Thickness(0,0,0,86);body.Children.Add(generationNote);
    var live=worker.Running&&boardArgbSnapshot!=null?GearArray(boardArgbSnapshot,"devices"):null;
-   var headers=new List<IDictionary<string,object>>();string firmware="—";int onboardZones=0;
-   if(live!=null)foreach(var rawDevice in live){var device=rawDevice as IDictionary<string,object>;if(device==null)continue;string id=OriginalStateText(device,"id","");if(!devices.Any(d=>d.id==id))continue;firmware=OriginalStateText(device,"firmware","—");var zones=GearArray(device,"zones");if(zones==null)continue;foreach(var rawZone in zones){var zone=rawZone as IDictionary<string,object>;if(zone==null)continue;if(OriginalStateFlag(zone,"addressable")==true)headers.Add(zone);else onboardZones++;}}
-   var summary=new Grid{Margin=new Thickness(0,20,0,22)};summary.ColumnDefinitions.Add(new ColumnDefinition());summary.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});summary.Children.Add(Label("已设置灯珠总数",14,text));var total=Label("— / —",16,muted);total.Margin=new Thickness(0);Grid.SetColumn(total,1);summary.Children.Add(total);target.Children.Add(summary);
-   target.Children.Add(Paragraph("当前数量、总数上限和 Gen 1 / Gen 2 模式无法读回，设置与重新检测暂不可用。",12,muted));
-   var cards=new WrapPanel{Margin=new Thickness(0,12,0,14)};
-   if(headers.Count==0)cards.Children.Add(BoardArgbHeaderCard("可编程接针",null));
-   else for(int n=0;n<headers.Count;n++)cards.Children.Add(BoardArgbHeaderCard("可编程接针 "+(n+1),headers[n]));
-   target.Children.Add(cards);
-   if(headers.Count>0)target.Children.Add(Paragraph("已识别 "+headers.Count+" 个逻辑接针通道 · 主板灯区 "+onboardZones+" 个 · 固件 "+firmware+"。逻辑通道数不代表连接设备或灯珠数量。",11,muted));
-   var aura=Button("打开 Aura 灯效",()=>{auraTab="Aura 灯效";ShowPage("灯效 & Aura Sync");});aura.Margin=new Thickness(0,12,0,0);target.Children.Add(aura);
+   var headers=new List<IDictionary<string,object>>();if(live!=null)foreach(var rawDevice in live){var device=rawDevice as IDictionary<string,object>;if(device==null||OriginalStateText(device,"controllerFamily","")!="motherboard")continue;string id=OriginalStateText(device,"id","");if(!devices.Any(d=>d.id==id))continue;var zones=GearArray(device,"zones");if(zones==null)continue;foreach(var rawZone in zones){var zone=rawZone as IDictionary<string,object>;if(zone!=null&&OriginalStateFlag(zone,"addressable")==true)headers.Add(zone);}}
+   // This model has three authored physical connector positions. A logical
+   // SDK zone is not proof of a connector's generation, LEDs or physical ID.
+   string channels=headers.Count==0?"物理接头状态未读取。":"已读取 "+headers.Count+" 个逻辑灯区；无法映射物理接头。";for(int n=0;n<3;n++){var card=BoardArgbHeaderCard("接头"+(n+1),null);card.ToolTip=channels;body.Children.Add(card);}
   }
 
-  UIElement BoardArgbHeaderCard(string name,IDictionary<string,object> zone) {
-   var panel=new StackPanel();var heading=Label(name,16,text,FontWeights.SemiBold);heading.Margin=new Thickness(0,0,0,18);panel.Children.Add(heading);
+  FrameworkElement BoardArgbHeaderCard(string name,IDictionary<string,object> zone) {
+   var panel=new StackPanel{Width=340,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,25)};var heading=Label(name,14,text,FontWeights.SemiBold);heading.Margin=new Thickness(0,0,0,5);panel.Children.Add(heading);
    var generations=new Grid();generations.ColumnDefinitions.Add(new ColumnDefinition());generations.ColumnDefinitions.Add(new ColumnDefinition());
-   for(int n=0;n<2;n++){var choice=Button(n==0?"Gen 1":"Gen 2",()=>{});choice.IsEnabled=false;choice.Margin=new Thickness(n==0?0:4,0,n==0?4:0,8);choice.ToolTip="当前模式未读回，切换尚未接通。";ToolTipService.SetShowOnDisabled(choice,true);Grid.SetColumn(choice,n);generations.Children.Add(choice);}panel.Children.Add(generations);
-   var unknown=Label("当前模式：—",11,muted);unknown.Margin=new Thickness(0,0,0,18);panel.Children.Add(unknown);
-   panel.Children.Add(Label("LED 灯珠数量",13,text));var count=FeatureText("—");count.IsEnabled=false;count.HorizontalContentAlignment=HorizontalAlignment.Center;count.Margin=new Thickness(0,7,0,16);count.ToolTip="此通道的物理灯珠数量尚未读回。";ToolTipService.SetShowOnDisabled(count,true);panel.Children.Add(count);
-   var finish=Button("完成",()=>{});finish.IsEnabled=false;finish.HorizontalAlignment=HorizontalAlignment.Right;finish.Margin=new Thickness(0);finish.ToolTip="灯珠数量设置接口尚未接通。";ToolTipService.SetShowOnDisabled(finish,true);panel.Children.Add(finish);
-   if(zone!=null){var channel=Label("逻辑通道 "+OriginalStateText(zone,"channel","—"),10,muted);channel.Margin=new Thickness(0,16,0,0);panel.Children.Add(channel);}
-   return new Border{Width=270,Padding=new Thickness(20),Margin=new Thickness(0,0,20,20),BorderBrush=border,BorderThickness=new Thickness(1),Background=Brush("#151515"),Child=panel};
+   for(int n=0;n<2;n++){var choice=Button(n==0?"Gen1":"Gen2",()=>{});choice.Height=28;choice.IsEnabled=false;choice.Margin=new Thickness(0);choice.Padding=new Thickness(8,2,8,2);choice.Background=Brush("#191919");choice.BorderThickness=new Thickness(0);choice.ToolTip="当前代数未读取。";ToolTipService.SetShowOnDisabled(choice,true);Grid.SetColumn(choice,n);generations.Children.Add(choice);}panel.Children.Add(generations);
+   var settings=new Grid{Width=260,Height=216,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,24,0,0),Background=Brush("#1A1A1A")};var values=new StackPanel{Margin=new Thickness(16,16,14,0)};var unknown=Label("—",14,muted);unknown.Margin=new Thickness(0,0,0,15);unknown.ToolTip="当前 Gen 模式未读取。";values.Children.Add(unknown);
+   var countTitle=new Grid();countTitle.ColumnDefinitions.Add(new ColumnDefinition());countTitle.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});var caption=Label("LED 数量",13,text);caption.Margin=new Thickness(0,0,0,4);countTitle.Children.Add(caption);var total=Label("— / —",13,muted);total.Margin=new Thickness(0);Grid.SetColumn(total,1);countTitle.Children.Add(total);values.Children.Add(countTitle);var count=FeatureText("—");count.Height=34;count.IsEnabled=false;count.IsReadOnly=true;count.HorizontalContentAlignment=HorizontalAlignment.Center;count.TextAlignment=TextAlignment.Center;count.Margin=new Thickness(0);count.ToolTip="此接头的灯珠数量与上限未读取。";ToolTipService.SetShowOnDisabled(count,true);values.Children.Add(count);settings.Children.Add(values);
+   var finish=Button("完成",()=>{});finish.Width=132;finish.Height=34;finish.Padding=new Thickness(8,4,8,4);finish.IsEnabled=false;finish.HorizontalAlignment=HorizontalAlignment.Right;finish.VerticalAlignment=VerticalAlignment.Bottom;finish.Margin=new Thickness(0,0,22,24);finish.ToolTip="灯珠数量设置暂不可用。";ToolTipService.SetShowOnDisabled(finish,true);settings.Children.Add(finish);panel.Children.Add(settings);return panel;
   }
 
   async Task ReadBoardArgbChannels() {
    if(busy||closing||render)return;
    boardArgbSnapshot=null;boardArgbMessage="正在读取主板 USB 通道…";
-   // Reuse the shared scan lifecycle; no second handle, automatic light write or
-   // dangerous Armoury Crate motherboard/HAL query is introduced here.
-   await ScanAura();
-   if(closing)return;
-   if(devices.Count==0){boardArgbMessage=auraMessage;ShowPage(page);return;}
    busy=true;
    try{
+    var scan=await worker.Request(new Dictionary<string,object>{{"op","scan"}});
+    if(!scan.ok)throw new InvalidOperationException(scan.error);devices=scan.devices??new List<AuraDevice>();
+    if(devices.Count==0){boardArgbMessage="未找到主板灯控。";return;}
     var snapshot=await worker.Request<Dictionary<string,object>>(new Dictionary<string,object>{{"op","status"}});
     if(OriginalStateFlag(snapshot,"ok")!=true)throw new InvalidOperationException(OriginalStateText(snapshot,"error","通道读取失败。"));
     boardArgbSnapshot=snapshot;boardArgbMessage="已读取逻辑通道。实际灯珠数量与当前 Gen 模式尚未读回。";

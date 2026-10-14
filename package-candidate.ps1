@@ -63,7 +63,7 @@ $entries = @(Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Sort-Objec
  [ordered]@{path=$relative;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 })
 if ($Mode -eq 'PublicCandidate' -and ($entries | Where-Object { $_.path -match '\.(png|jpe?g|gif|bmp|svg|dll|sys|node|asar)$' })) { throw 'Unexpected proprietary/media file in candidate.' }
-$metadata = [ordered]@{schemaVersion=1;version='0.3.0-preview';mode=$Mode;status='preview';uploaded=$false;projectLicense='MIT';hardwareWriteValidation='partial';guiDeviceWritesDefault='disabled_session_opt_in';auraWritesDefault='disabled_separate_opt_in';signed=$false;vendorLibrariesBundled=$false;officialImagesBundled=($Mode -eq 'LocalPreview');files=$entries}
+$metadata = [ordered]@{schemaVersion=1;version='0.3.0-preview';mode=$Mode;status='preview';uploaded=$false;projectLicense='MIT';hardwareWriteValidation='partial';guiDeviceWritesDefault='disabled_session_opt_in';auraWritesDefault='disabled_session_opt_in';signed=$false;vendorLibrariesBundled=$false;officialImagesBundled=($Mode -eq 'LocalPreview');files=$entries}
 $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $packageRoot 'PACKAGE-MANIFEST.json') -Encoding UTF8
 $hashes = $entries | ForEach-Object { $_.sha256 + '  ' + $_.path }
 $hashes | Set-Content -LiteralPath (Join-Path $packageRoot 'SHA256SUMS.txt') -Encoding UTF8

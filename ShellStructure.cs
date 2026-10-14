@@ -7,14 +7,13 @@ using System.Windows.Media;
 namespace RogControl {
  public partial class MainWindow {
   UIElement BuildOriginalNavigation() {
-   var shell=new DockPanel{Background=Brush("#191919")};
+   var shell=new DockPanel{Background=panel};
    var top=Label("☰",20,text);top.Margin=new Thickness(16,12,0,10);top.Height=32;DockPanel.SetDock(top,Dock.Top);shell.Children.Add(top);
    var bottom=new StackPanel();bottom.Children.Add(new Border{Height=1,Background=border,Margin=new Thickness(12,0,12,10)});
-   AddOriginalNav(bottom,"功能库","⊞");AddOriginalNav(bottom,"用户中心","♙");AddOriginalNav(bottom,"设置","⚙");bottom.Margin=new Thickness(0,0,0,10);DockPanel.SetDock(bottom,Dock.Bottom);shell.Children.Add(bottom);
+   AddOriginalNav(bottom,"更新库","⚙");bottom.Margin=new Thickness(0,0,0,10);DockPanel.SetDock(bottom,Dock.Bottom);shell.Children.Add(bottom);
    var list=new StackPanel();AddOriginalNav(list,"控制面板","◴");AddOriginalNav(list,"设备","▣");
    AddOriginalGroup(list,"游乐场");AddOriginalNav(list,"灯效 & Aura Sync","⬡");
    AddOriginalGroup(list,"助理");AddOriginalNav(list,"情境设置档","☷");AddOriginalNav(list,"宏","▧");AddOriginalNav(list,"GameFirst","ϟ");AddOriginalNav(list,"游戏库","▣");AddOriginalNav(list,"Fan Xpert","▨");AddOriginalNav(list,"工具","⚒");
-   AddOriginalGroup(list,"内容");AddOriginalNav(list,"内容平台","▱");AddOriginalNav(list,"推荐","☆");
    shell.Children.Add(new ScrollViewer{Content=list,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
    return new Border{Child=shell,BorderBrush=border,BorderThickness=new Thickness(0,0,1,0)};
   }
@@ -27,16 +26,15 @@ namespace RogControl {
    navigation[name]=button;parent.Children.Add(button);
   }
   void UpdateOriginalNavigation() {
-   string current=page.StartsWith("device:",StringComparison.Ordinal)?"设备":page;
-   foreach(var entry in navigation){bool active=entry.Key==current;entry.Value.Background=active?Brush("#302E25"):Brushes.Transparent;entry.Value.BorderBrush=active?accent:Brushes.Transparent;}
+   string current=page=="系统监控"?"控制面板":page.StartsWith("device:",StringComparison.Ordinal)?"设备":page=="设置"?"更新库":page=="驱动程序更新"||page=="Windows 电源"||page=="屏幕设置"||page=="电池信息"||page=="笔记本与掌机"||page=="设备兼容"?"工具":page;
+   foreach(var entry in navigation){bool active=entry.Key==current;entry.Value.Background=active?(uiPreferences!=null&&uiPreferences.Theme=="light"?panel:Brush("#302E25")):Brushes.Transparent;entry.Value.BorderBrush=active?accent:Brushes.Transparent;}
   }
   void OpenOriginalDevice(string target){ShowPage("device:"+target);}
-  void OriginalPendingPage(string name) {Header(name,"");content.Children.Add(Paragraph("此页面功能尚未接通。",13,muted));}
+  void OriginalPendingPage(string name) {Header(name,"");content.Children.Add(Paragraph("功能暂不可用",13,muted));}
   void OriginalUnknownDevice(string kind) {
    string name=kind=="keyboard"?"ROG 夜魔 EXTREME 二十周年版":kind=="mouse"?"ROG HARPE II EXTREME EDITION 20":kind=="headset"?"ROG 棱镜 2-KJP":kind=="receiver"?"ROG OMNI RECEIVER":"ASTRAL-RTX5090";
    Header(name,"");content.Children.Add(OriginalInstalledImage(OriginalProductImage(kind),230));
-   content.Children.Add(Paragraph("设备设置尚未接通；当前保留设备入口。",13,muted));
-   if(kind=="keyboard"||kind=="mouse")content.Children.Add(Paragraph("本机原厂接口曾崩溃或返回占位数据，尚不能确认当前设置。",12,muted));
+   content.Children.Add(Paragraph("设置不可用",13,muted));
   }
  }
 }

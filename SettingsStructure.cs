@@ -10,23 +10,9 @@ namespace RogControl {
   string settingsTab="更新中心";
 
   void OriginalSettingsPage() {
-   Header("设置","");
-   var tabs=new StackPanel { Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,24) };
-   foreach(string label in new[]{"一般设置","更新中心","关于"}) {
-    string target=label;
-    var tab=Button(label,()=>{settingsTab=target;content.Children.Clear();OriginalSettingsPage();});
-    tab.Background=Brushes.Transparent;tab.BorderThickness=new Thickness(0);
-    tab.Foreground=target==settingsTab?accent:muted;
-    tab.FontSize=16;tab.FontWeight=target==settingsTab?FontWeights.SemiBold:FontWeights.Normal;
-    tab.Padding=new Thickness(4,10,4,12);tab.Margin=new Thickness(0,0,36,0);
-    var underline=new StackPanel();underline.Children.Add(tab);
-    underline.Children.Add(new Border { Height=2,Background=target==settingsTab?accent:Brushes.Transparent });
-    tabs.Children.Add(underline);
-   }
-   content.Children.Add(tabs);
-   if(settingsTab=="一般设置") OriginalGeneralSettings();
-   else if(settingsTab=="关于") OriginalAboutSettings();
-   else OriginalUpdateCenter();
+   Header("更新库","");
+   OriginalOpenAcUpdateCenter();
+   OriginalAdvancedHardwareControl();
   }
 
   Button PendingUpdateButton(string title) {
@@ -68,10 +54,8 @@ namespace RogControl {
     // Uninstall registration supplies name/version only. Module/date stay unknown.
     components.Children.Add(SettingsTableRow(new[]{component.Name,"—",String.IsNullOrWhiteSpace(component.Version)?"—":component.Version,"—"},new[]{3.8,1.2,1.7,1.1},false));
    }
-   if(info.Components.Count==0)components.Children.Add(Paragraph("本机组件版本尚未读取，请在一般设置中刷新状态。",12,muted));
+   if(info.Components.Count==0)components.Children.Add(Paragraph("暂无数据",12,muted));
    content.Children.Add(SettingsGroup("设备与元件","全部更新",components));
-   content.Children.Add(LocalUpdatePanel());
-   content.Children.Add(Paragraph("当前显示本机安装版本；更新服务器状态尚未读取。",12,muted));
   }
 
   UIElement SettingsInstallStatus() {
@@ -99,22 +83,10 @@ namespace RogControl {
    return new Border { BorderBrush=border,BorderThickness=new Thickness(0,0,0,1),Child=row };
   }
 
-  void OriginalGeneralSettings() {
-   OriginalHardwareControlSettings();
-   var services=Box("服务状态","");
-   foreach(var service in info.Services)services.Children.Add(Label(service.Name+"    "+service.Status,13,service.Status=="Running"?green:muted));
-   if(info.Services.Count==0)services.Children.Add(Paragraph("本机服务状态尚未读取。",12,muted));
-   var actions=Row();var refresh=Button("刷新状态",async()=>await RefreshInventory());refresh.IsEnabled=!busy;actions.Children.Add(refresh);
-   var restart=Button("重启 AURA 服务",async()=>await RestartLighting());restart.IsEnabled=!busy;actions.Children.Add(restart);services.Children.Add(actions);
-   services.Children.Add(Paragraph("重启时灯效会短暂中断，Windows 将请求管理员授权。",12,muted));
-   content.Children.Add(Card(services));
-  }
-
-  void OriginalAboutSettings() {
-   var about=Box("OpenAC · 研究版 0.3","本机 Armoury Crate 版本："+InstalledArmouryVersion());
-   about.Children.Add(Paragraph("保留原版导航。已实现耳机设置、风扇控制器曲线与灯效、LCD 预设与图片上传、磁盘健康信息、本地宏、游戏库和手动情境配置。设备原图按比例显示。硬件写入仍需要实机验证，未确认状态会明确标出。",13,text));
-   about.Children.Add(Paragraph("完整神光同步、主板 Fan Xpert、音效增强、自动情境切换、官方组件安装与固件刷写等功能尚未完成。键鼠已在线完成部分实机验证，OLED 部分读取仍未确认。此版本尚不能完整替代原应用。",13,muted));
-   var actions=Row();actions.Children.Add(Button("导出诊断报告",ExportReport));about.Children.Add(actions);content.Children.Add(Card(about));
+  void OriginalAdvancedHardwareControl() {
+   var controls=new CheckBox{Content="启用设备控制",Foreground=text,IsChecked=hardwareControlPolicy.Enabled,IsEnabled=!busy&&!closing&&!render,ToolTip="开启后可以手动应用已适配的设备设置；开关本身不发送设备命令。仅本次运行有效。",Margin=new Thickness(0,8,0,12)};
+   RoutedEventHandler change=(s,e)=>SetSessionHardwareControl(controls.IsChecked==true);controls.Checked+=change;controls.Unchecked+=change;
+   content.Children.Add(new Expander{Header="设备控制",Content=controls,Foreground=text,HorizontalContentAlignment=HorizontalAlignment.Stretch,IsExpanded=!hardwareControlPolicy.Enabled});
   }
  }
 }

@@ -23,27 +23,24 @@ internal static partial class GearLinkWorker
     }
     internal static Dictionary<string,int> CreateMouseTargets()
     {
-        var result=new Dictionary<string,int>(StringComparer.Ordinal);
-        for(int i=0;i<26;i++)result.Add("Key"+(char)('A'+i),4+i);
-        for(int i=1;i<=9;i++)result.Add("Digit"+i,29+i);result.Add("Digit0",39);
-        string[] names={"Enter","Escape","Backspace","Tab","Space","ArrowRight","ArrowLeft","ArrowDown","ArrowUp","LeftCtrl","LeftShift","LeftAlt","LeftWin","RightCtrl","RightShift","RightAlt","RightWin","MultimediaPlayPause","MultimediaStop","MultimediaPrevTrack","MultimediaNextTrack","MultimediaMute","MultimediaVolumeDown","MultimediaVolumeUp","MouseProfile","MouseDoubleClick","MouseLeftBackward","MouseLeftForward","MouseDPISwitch","MouseTargetFocus","MouseScrollUp","MouseScrollDown","MouseClickLeft","MouseClickRight","MouseClickMiddle","MouseDpiUp","MouseDpiDown","KeyDisabled","ShiftMode"};
-        int[] codes={40,41,42,43,44,79,80,81,82,224,225,226,227,228,229,230,231,240,241,242,243,244,245,246,480,483,484,485,486,487,488,489,496,497,498,499,500,511,253};
-        for(int i=0;i<names.Length;i++)result.Add(names[i],codes[i]);
-        for(int i=1;i<=12;i++)result.Add("F"+i,57+i);
-        return result;
+        return RogControl.MouseButtonActionFacts.SimpleTargetMap();
     }
-    internal static object FeatureOptions(string kind)
+    internal static int[] KeyboardPollingRates(int modelPid) { return modelPid==7586||modelPid==7588?new int[]{1000,8000}:new int[0]; }
+    internal static object FeatureOptions(string kind,int modelPid=0)
     {
         if(kind=="mouse")return Obj("buttonSources",MouseButtons,"buttonTargets",MouseTargets.Keys.ToArray(),"zonePollingRates",new int[]{125,250,500,1000,2000,4000,8000},"zoneTxPower",new object[]{Obj("value",0,"name","FullPower"),Obj("value",1,"name","EnvironmentAdaptive")});
-        if(kind=="keyboard")return Obj("keySources",KeyboardKeys.Keys.Where(k=>!k.StartsWith("AV_")&&k!="Disabled"&&k!="Default").ToArray(),"keyTargets",KeyboardKeys.Keys.Where(k=>!k.StartsWith("Lever")).ToArray(),"oledModes",new string[]{"Animation","Clock","LaptopBattery","HWInfo","KPM"},"leverModes",new string[]{"MediaVolume","MediaContent","LightBrightnessPerKeyZone","LightBrightnessOLED","LightEffectSwitch","FanControlMB","FanControlAIO","Customize"},"oledBarItems",OledBarItems);
+        if(kind=="keyboard")return Obj("pollingRates",KeyboardPollingRates(modelPid),"keySources",KeyboardKeys.Keys.Where(k=>!k.StartsWith("AV_")&&k!="Disabled"&&k!="Default").ToArray(),"keyTargets",KeyboardKeys.Keys.Where(k=>!k.StartsWith("Lever")).ToArray(),"oledModes",new string[]{"Animation","Clock","LaptopBattery","HWInfo","KPM"},"leverModes",new string[]{"MediaVolume","MediaContent","LightBrightnessPerKeyZone","LightBrightnessOLED","LightEffectSwitch","FanControlMB","FanControlAIO","Customize"},"oledBarItems",OledBarItems);
         return Obj();
     }
     internal static void ReadFeatures(GearHid hid,GearDescriptor descriptor,byte report,string kind,Dictionary<string,object> request,Dictionary<string,object> snapshot,List<string> caps,List<object> errors)
     {
+        ReadPeripheralLighting(hid,descriptor,report,kind,snapshot,caps,errors);
         if(kind=="mouse") {
             QueryField(hid,report,Packet(0x12,20,1),"zoneSettings",errors,b=>{snapshot["zoneSettings"]=ParseZone(b);caps.Add("zoneSettings");});
             QueryField(hid,report,Packet(0x12,5,0),"buttonBindings",errors,b=>{snapshot["buttonBindings"]=ParseMouseBindings(b);caps.Add("buttonBindings");});
             QueryField(hid,report,Packet(0x12,5,7),"shiftButtonBindings",errors,b=>{snapshot["shiftButtonBindings"]=ParseMouseBindings(b);caps.Add("shiftButtonBindings");});
+            ReadMouseSensorFeatures(hid,report,descriptor.Pid,snapshot,caps,errors);
+            snapshot["manualCalibrationWorkflowSupported"]=caps.Contains("mouseCalibrationInfo")&&caps.Contains("mouseCalibrationLOD");
             return;
         }
         QueryField(hid,report,Packet(0x23,0,0),"oledFirmware",errors,b=>{Require(b,8);string version=VersionNative4(b,4);if(version==null)throw new IOException("OLED firmware information is not ready.");snapshot["oledFirmware"]=version;caps.Add("oledFirmware");});
@@ -62,8 +59,9 @@ internal static partial class GearLinkWorker
             var value=request.ContainsKey("value")?request["value"] as Dictionary<string,object>:null;
             if(value==null||!value.ContainsKey("source"))throw new ArgumentException("keyBinding read requires value.source.");
             string source=value["source"] as string;int code=KeyCode(KeyboardKeys,source);if(source=="Disabled"||source=="Default"||source.StartsWith("AV_"))throw new ArgumentException("Unsupported physical key source.");
-            bool lever=source.StartsWith("Lever");byte[] packet=lever?Packet(0x25,12,0,7,(byte)code,(byte)(code>>8)):Packet(0x25,160,0,(byte)code,(byte)(code>>8));
-            QueryField(hid,report,packet,"keyBinding",errors,b=>{Require(b,lever?6:8);int target=U16(b,lever?4:6);snapshot["keyBinding"]=Obj("source",source,"sourceCode",code,"target",NameForCode(KeyboardKeys,target),"targetCode",target,"lever",lever);caps.Add("keyBinding");});
+            if(!LegacyKeyboard(descriptor.Pid))throw new ArgumentException("This keyboard binding protocol has not been verified for the model.");
+            bool lever=source.StartsWith("Lever");byte[] packet=lever?Packet(0x25,12,0,7,(byte)code,(byte)(code>>8)):Packet(0x25,13,0,(byte)code,(byte)(code>>8));
+            QueryField(hid,report,packet,"keyBinding",errors,b=>{snapshot["keyBinding"]=ParseKeyboardBinding(source,b);caps.Add("keyBinding");});
         }
     }
     internal static Dictionary<string,object> ParseZone(byte[] b)
@@ -78,13 +76,18 @@ internal static partial class GearLinkWorker
     internal static bool ReadBoolean(byte[] b,int offset){Require(b,offset+1);if(b[offset]>1)throw new IOException("Unknown switch value.");return b[offset]==1;}
     internal static bool[] ReadBooleans(byte[] b,int[] offsets){return offsets.Select(i=>ReadBoolean(b,i)).ToArray();}
     internal static string NameForCode(Dictionary<string,int> map,int code){foreach(var pair in map)if(pair.Value==code)return pair.Key;return null;}
+    internal static Dictionary<string,object> ParseKeyboardBinding(string source,byte[] response){Require(response,6);int code=KeyCode(KeyboardKeys,source),target=U16(response,4);return Obj("source",source,"sourceCode",code,"target",NameForCode(KeyboardKeys,target),"targetCode",target,"lever",source.StartsWith("Lever"));}
     internal static int KeyCode(Dictionary<string,int> map,string name){int code;if(name==null||!map.TryGetValue(name,out code))throw new ArgumentException("Unknown key or function name.");return code;}
     internal static void AddFeatureSetCapabilities(string kind,bool online,Dictionary<string,object> state,Dictionary<string,object> snapshot,List<string> caps)
     {
-        state["settingOptions"]=FeatureOptions(kind);if(!online)return;var setters=new List<string>((string[])state["setCapabilities"]);
+        object pid;int model=state.TryGetValue("pid",out pid)&&pid is int?(int)pid:0;state["settingOptions"]=FeatureOptions(kind,model);if(!online)return;var setters=new List<string>((string[])state["setCapabilities"]);
         if(kind=="mouse"){if(caps.Contains("zoneSettings"))setters.Add("zoneSettings");if(caps.Contains("buttonBindings")||caps.Contains("shiftButtonBindings"))setters.Add("buttonBinding");}
         if(kind=="keyboard") {foreach(string name in new string[]{"oledEnabled","oledBrightness","oledMode","oledKpsEnabled","oledPreset","leverMode","keyBinding"})if(caps.Contains(name))setters.Add(name);if(caps.Contains("oledModeStates"))setters.Add("oledModeEnabled");if(caps.Contains("leverModeStates"))setters.Add("leverModeEnabled");if(caps.Contains("oledBarInfo"))setters.Add("oledBarItem");}
         state["setCapabilities"]=setters.Distinct().ToArray();
+        object softwareMode,windowsMode;if(online&&caps.Contains("lightingSoftwareMode")&&snapshot.TryGetValue("lightingSoftwareMode",out softwareMode)&&softwareMode is bool&&snapshot.TryGetValue("windowsLightingEnabled",out windowsMode)&&windowsMode is bool&&!(bool)windowsMode&&(kind=="keyboard"&&LegacyKeyboard(model)||kind=="mouse"&&(model==7546||model==7548)))state["setCapabilities"]=((string[])state["setCapabilities"]).Concat(new[]{"lightingSoftwareMode"}).ToArray();
+        if(online&&PeripheralLightingReady(kind,model,snapshot)&&snapshot.ContainsKey("lightingSoftwareMode")&&snapshot["lightingSoftwareMode"] is bool&&!(bool)snapshot["lightingSoftwareMode"]&&caps.Contains("lighting"))state["setCapabilities"]=((string[])state["setCapabilities"]).Concat(new[]{"staticLighting"}).Distinct().ToArray();
+        if(kind=="mouse")AddMouseSensorSetCapabilities(online,model,state,snapshot,caps);
+        AddMouseLightingCapabilities(kind,online,state,snapshot,caps);
     }
     internal static Dictionary<string,object> ValueObject(object value,params string[] keys)
     {
@@ -93,13 +96,19 @@ internal static partial class GearLinkWorker
     internal static byte BooleanByte(object value){if(!(value is bool))throw new ArgumentException("Switch must be boolean.");return (bool)value?(byte)1:(byte)0;}
     internal static byte[] BuildFeatureSetting(string kind,string setting,object value,Dictionary<string,object> before)
     {
+        if(kind=="mouse"){object model;int pid=before.TryGetValue("modelPid",out model)&&model is int?(int)model:0;var sensor=BuildMouseSensorSetting(setting,value,before,pid);if(sensor!=null)return sensor;if(setting=="mouseLighting")return BuildMouseLighting(value,before);}
+        if(setting=="lightingSoftwareMode")return BuildPeripheralLightingSoftwareMode(kind,value,before);
+        if(setting=="staticLighting")return BuildPeripheralStaticLighting(kind,value,before);
         if(kind=="mouse"&&setting=="zoneSettings") {
             ValueObject(value,"enabled","pollingRate","dpi","dpiY","txPower");var v=(Dictionary<string,object>)value;var baseline=before.ContainsKey("zoneSettings")?before["zoneSettings"] as Dictionary<string,object>:null;if(baseline==null)throw new ArgumentException("Current Zone mode is unknown.");
             int[] rates={125,250,500,1000,2000,4000,8000};int rate=Integer(v["pollingRate"],125,8000),index=Array.IndexOf(rates,rate);if(index<0)throw new ArgumentException("Unsupported Zone polling rate.");int x=Integer(v["dpi"],100,65000)-1,y=Integer(v["dpiY"],100,65000)-1,power=Integer(v["txPower"],0,1);
             return Packet(0x51,68,1,BooleanByte(v["enabled"]),(byte)index,(byte)x,(byte)(x>>8),(byte)y,(byte)(y>>8),(byte)power);
         }
         if(kind=="mouse"&&setting=="buttonBinding") {
-            var v=ValueObject(value,"button","target","shift");string source=v["button"] as string;int index=Array.IndexOf(MouseButtons,source);if(index<0)throw new ArgumentException("Unknown physical mouse button.");bool shift=BooleanByte(v["shift"])==1;int code=KeyCode(MouseTargets,v["target"] as string);string field=shift?"shiftButtonBindings":"buttonBindings";var mappings=before.ContainsKey(field)?before[field] as Dictionary<string,object>:null;if(mappings==null||!mappings.ContainsKey(source))throw new ArgumentException("Current button mapping is unknown.");int button=MouseButtonCodes[index];return Packet(0x51,shift?(byte)35:(byte)33,0,(byte)button,(byte)(button>>8),(byte)code,(byte)(code>>8));
+            var v=ValueObject(value,"button","target","shift");object model;int pid=before.TryGetValue("modelPid",out model)&&model is int?(int)model:0;
+            string source=v["button"] as string,target=v["target"] as string;bool shift=BooleanByte(v["shift"])==1;byte[] packet;bool alreadySet;
+            if(!RogControl.MouseButtonActionFacts.TrySimplePacket(pid,before,source,target,shift,out packet,out alreadySet))throw new ArgumentException("The exact mouse model, complete binding bank and target constraints must be confirmed.");
+            if(alreadySet){int index=Array.IndexOf(MouseButtons,source),button=MouseButtonCodes[index],code=KeyCode(MouseTargets,target);return Packet(0x51,shift?(byte)35:(byte)33,0,(byte)button,(byte)(button>>8),(byte)code,(byte)(code>>8));}return packet;
         }
         if(kind!="keyboard")return null;
         if(setting=="oledEnabled"||setting=="oledKpsEnabled")return Packet(setting=="oledEnabled"?(byte)0x69:(byte)0x6B,0,0,BooleanByte(value));
@@ -114,11 +123,14 @@ internal static partial class GearLinkWorker
     }
     internal static bool IsFeatureQuery(string kind,byte[] packet)
     {
+        if(IsPeripheralLightingQuery(kind,packet))return true;
         if(kind!="keyboard"||packet.Length<4||packet[2]!=0||packet[3]!=0)return false;
-        return packet[0]==0x21&&packet[1]==0||packet[0]==0x22&&packet[1]==1||packet[0]==0x23&&packet[1]<=4||packet[0]==0x24&&packet[1]>=1&&packet[1]<=3||packet[0]==0x25&&(packet[1]==11||packet[1]==12||packet[1]==160);
+        return packet[0]==0x21&&packet[1]==0||packet[0]==0x22&&packet[1]==1||packet[0]==0x23&&packet[1]<=4||packet[0]==0x24&&packet[1]>=1&&packet[1]<=3||packet[0]==0x25&&(packet[1]==11||packet[1]==12||packet[1]==13);
     }
     internal static bool IsFeatureWrite(string kind,byte[] packet)
     {
+        if(IsMouseLightingWrite(kind,packet))return true;
+        if(IsPeripheralLightingWrite(kind,packet))return true;
         if(packet.Length<5||packet[3]!=0)return false;
         if(kind=="mouse")return packet[0]==0x51&&(packet[1]==68&&packet[2]==1&&packet.Length==11||(packet[1]==33||packet[1]==35)&&packet[2]==0&&packet.Length==8&&MouseButtonCodes.Contains(U16(packet,4))&&MouseTargets.Values.Contains(U16(packet,6)));
         if(kind!="keyboard")return false;
@@ -128,9 +140,12 @@ internal static partial class GearLinkWorker
     }
     internal static bool? MatchesFeatureSetting(string setting,object value,Dictionary<string,object> snapshot)
     {
+        var sensorMatch=MatchesMouseSensorSetting(setting,value,snapshot);if(sensorMatch.HasValue)return sensorMatch;
+        if(setting=="mouseLighting")return MatchesMouseLighting(value,snapshot,snapshot);
+        if(setting=="staticLighting")return MatchesPeripheralStaticLighting(value,snapshot);
         object prior;
         if(setting=="zoneSettings"){if(!snapshot.TryGetValue(setting,out prior)||!(prior is Dictionary<string,object>)||!(value is Dictionary<string,object>))return false;var v=(Dictionary<string,object>)value;var p=(Dictionary<string,object>)prior;return new string[]{"enabled","pollingRate","dpi","dpiY","txPower"}.All(k=>p.ContainsKey(k)&&v.ContainsKey(k)&&Json.Serialize(p[k])==Json.Serialize(v[k]));}
-        if(setting=="buttonBinding"){var v=value as Dictionary<string,object>;if(v==null)return false;string field=(bool)v["shift"]?"shiftButtonBindings":"buttonBindings";if(!snapshot.TryGetValue(field,out prior)||!(prior is Dictionary<string,object>))return false;var p=(Dictionary<string,object>)prior;object binding;if(!p.TryGetValue(v["button"] as string,out binding)||!(binding is Dictionary<string,object>))return false;return (int)((Dictionary<string,object>)binding)["targetCode"]==KeyCode(MouseTargets,v["target"] as string);}
+        if(setting=="buttonBinding"){try{var v=ValueObject(value,"button","target","shift");return RogControl.MouseButtonActionFacts.MatchesSimple(snapshot,v["button"] as string,v["target"] as string,BooleanByte(v["shift"])==1)==true;}catch(ArgumentException){return false;}}
         if(setting=="oledModeEnabled"||setting=="leverModeEnabled"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue(setting=="oledModeEnabled"?"oledModeStates":"leverModeStates",out prior)||!(prior is bool[]))return false;var modes=(bool[])prior;int mode=Convert.ToInt32(v["mode"]);return mode>=0&&mode<modes.Length&&modes[mode]==(bool)v["enabled"];}
         if(setting=="oledBarItem"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue("oledBarInfo",out prior)||!(prior is Dictionary<string,object>))return false;var items=(Dictionary<string,object>)prior;object current;return items.TryGetValue(v["item"] as string,out current)&&current is bool&&(bool)current==(bool)v["enabled"];}
         if(setting=="keyBinding"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue(setting,out prior)||!(prior is Dictionary<string,object>))return false;var p=(Dictionary<string,object>)prior;return Text(p,"source")==v["source"] as string&&(int)p["targetCode"]==KeyCode(KeyboardKeys,v["target"] as string);}
@@ -139,7 +154,7 @@ internal static partial class GearLinkWorker
     internal static void ExtendedSelfTest()
     {
         int tests=0;Action<bool> check=v=>{if(!v)throw new Exception("Extended synthetic protocol check failed.");tests++;};
-        var before=Obj("zoneSettings",Obj("enabled",false,"pollingRate",1000,"dpi",1600,"dpiY",800,"txPower",1),"buttonBindings",ParseMouseBindings(new byte[]{18,5,0,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"shiftButtonBindings",ParseMouseBindings(new byte[]{18,5,7,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"oledBarRaw",new int[]{61,128},"oledModeStates",new bool[]{true,false,false,false,true},"leverModeStates",new bool[]{true,true,true,true,true,false,false,true},"keyBinding",Obj("source","KeyA","targetCode",31));
+        var before=Obj("modelPid",7548,"zoneSettings",Obj("enabled",false,"pollingRate",1000,"dpi",1600,"dpiY",800,"txPower",1),"buttonBindings",ParseMouseBindings(new byte[]{18,5,0,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"shiftButtonBindings",ParseMouseBindings(new byte[]{18,5,7,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"oledBarRaw",new int[]{61,128},"oledModeStates",new bool[]{true,false,false,false,true},"leverModeStates",new bool[]{true,true,true,true,true,false,false,true},"keyBinding",Obj("source","KeyA","targetCode",31));
         var zone=Obj("enabled",true,"pollingRate",8000,"dpi",1600,"dpiY",800,"txPower",1);
         check(BuildFeatureSetting("mouse","zoneSettings",zone,before).SequenceEqual(new byte[]{81,68,1,0,1,6,63,6,31,3,1}));
         var parsed=ParseZone(new byte[]{18,20,1,0,1,6,63,6,31,3,1});before["zoneSettings"]=parsed;check(MatchesFeatureSetting("zoneSettings",zone,before)==true);zone["dpiY"]=801;check(MatchesFeatureSetting("zoneSettings",zone,before)==false);
@@ -168,11 +183,103 @@ internal static partial class GearLinkWorker
         blocked=false;try{BuildFeatureSetting("mouse","buttonBinding",Obj("button","rawCode","target","KeyA","shift",false),before);}catch(ArgumentException){blocked=true;}check(blocked);
         blocked=false;try{ParseZone(new byte[]{18,20,1,0,255,6,63,6,31,3,1});}catch(IOException){blocked=true;}check(blocked);
         check(KeyboardKeys["KeyA"]!=MouseTargets["KeyA"]);check(!KeyboardKeys.ContainsKey("Backslash"));
-        check(IsFeatureQuery("keyboard",Packet(0x25,160,0,31,0)));check(!IsFeatureQuery("keyboard",Packet(0x25,37,0,0,31,0)));check(!IsFeatureQuery("mouse",Packet(0x23,3,0)));
+        check(IsFeatureQuery("keyboard",Packet(0x25,13,0,31,0)));check(!IsFeatureQuery("keyboard",Packet(0x25,37,0,0,31,0)));check(!IsFeatureQuery("mouse",Packet(0x23,3,0)));
+        var legacyRequest=Packet(0x23,3,0);var legacyReply=new byte[]{2,0x23,3,1,0,60};check(ResponseMatches(7588,2,legacyRequest,legacyReply,legacyReply.Length));check(ResponseMatches(7586,2,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7548,2,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7588,3,legacyRequest,legacyReply,legacyReply.Length));check(!ResponseMatches(7588,2,legacyRequest,new byte[]{2,0x23,4,1,0,60},6));check(!ResponseMatches(7588,2,legacyRequest,legacyReply,2));check(!ResponseMatches(7588,2,legacyRequest,legacyReply,legacyReply.Length+1));check(ResponseMatches(6862,1,Packet(0xA0,0,0),new byte[]{1,0xA0,0,1,0},5));
+        var binding=ParseKeyboardBinding("KeyA",new byte[]{0x25,13,1,0,50,0});check((string)binding["target"]=="KeyB"&&(int)binding["targetCode"]==50&&(int)binding["sourceCode"]==31);check((string)ParseKeyboardBinding("KeyA",new byte[]{0x25,13,0,0,255,0})["target"]=="Default");check(ParseKeyboardBinding("KeyA",new byte[]{0x25,13,0,0,231,3})["target"]==null);check(!IsFeatureQuery("keyboard",Packet(0x25,160,0,31,0)));
+        check(DeviceErrorResponse(2,new byte[]{2,255,170,0,2,3},6));check(!DeviceErrorResponse(3,new byte[]{2,255,170,0,2,3},6));check(!DeviceErrorResponse(2,new byte[]{2,255,170},2));check(!DeviceErrorResponse(2,new byte[]{2,0x23,3,0,0,50},6));
+        check(KeyboardPollingRates(7588).SequenceEqual(new[]{1000,8000}));check(KeyboardPollingRates(7586).SequenceEqual(new[]{1000,8000}));check(KeyboardPollingRates(7495).Length==0);
+        foreach(int model in new[]{7586,7588})foreach(int rate in new[]{2000,4000}){bool rejected=false;try{BuildPeripheralSetting("keyboard","pollingRate",rate,Obj("modelPid",model));}catch(ArgumentException){rejected=true;}check(rejected);}
+        check(BuildPeripheralSetting("keyboard","pollingRate",1000,Obj("modelPid",7588)).SequenceEqual(new byte[]{81,49,0,0,0,0}));check(BuildPeripheralSetting("keyboard","pollingRate",8000,Obj("modelPid",7586)).SequenceEqual(new byte[]{81,49,0,0,3,0}));bool unknownModel=false;try{BuildPeripheralSetting("keyboard","pollingRate",8000,Obj());}catch(ArgumentException){unknownModel=true;}check(unknownModel);check(((int[])((Dictionary<string,object>)FeatureOptions("keyboard",7588))["pollingRates"]).SequenceEqual(new[]{1000,8000}));
+        var settingPacket=Packet(0x51,49,15,1,2,1,2,3,4,5);int outputCalls=0,inputCalls=0;var replies=new Queue<byte[]>(new[]{new byte[]{3,0x12,0,2,0,1},new byte[]{3,0x51,49,14,0,1},new byte[]{3,0x51,49,15,0,1}});var receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;check(buffer[0]==3&&buffer.Skip(1).Take(settingPacket.Length).SequenceEqual(settingPacket));return buffer.Length;}inputCalls++;check(budget<=900&&budget>GearBoundedIo.CancelReserveMs);var reply=replies.Dequeue();Array.Copy(reply,buffer,reply.Length);return reply.Length;});check(outputCalls==1&&inputCalls==3&&receipt.OutputCompleted&&receipt.Acknowledged&&!receipt.Rejected);
+        outputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;return buffer.Length;}throw new TimeoutException("fake timeout");});check(outputCalls==1&&receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Warning!=null);
+        outputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write){outputCalls++;return buffer.Length;}Array.Copy(new byte[]{3,255,170},buffer,3);return 3;});check(outputCalls==1&&receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Rejected);
+        inputCalls=0;receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write)return buffer.Length-1;inputCalls++;return 0;});check(!receipt.OutputCompleted&&!receipt.Acknowledged&&inputCalls==0&&receipt.Warning!=null);
+        receipt=SendSettingAndAwaitResponse(7588,2,Packet(0x68,0,0,50),64,64,(write,buffer,budget)=>{if(write)return buffer.Length;Array.Copy(new byte[]{2,0x68,0,1,0,50},buffer,6);return 6;});check(receipt.OutputCompleted&&receipt.Acknowledged);
+        receipt=SendSettingAndAwaitResponse(7548,3,settingPacket,64,64,(write,buffer,budget)=>{if(write)return buffer.Length;return 0;});check(receipt.OutputCompleted&&!receipt.Acknowledged&&receipt.Warning!=null);
+        check(ResponseMatches(7548,3,Packet(0x12,4,2),new byte[]{3,0x12,4,2,0,255,170},7)&&!DeviceErrorResponse(3,new byte[]{3,0x12,4,2,0,255,170},7));
         check(IsFeatureWrite("keyboard",BuildFeatureSetting("keyboard","oledBrightness",50,before)));check(!IsFeatureWrite("headset",BuildFeatureSetting("keyboard","oledBrightness",50,before)));check(!IsFeatureWrite("keyboard",Packet(0x62,0,0,1)));
         check(VersionNative4(new byte[]{16,0,9,0},0)=="9.00.10");check(VersionNative4(new byte[]{9,0,1,0},0)=="1.00.09");check(VersionNative4(new byte[]{9,0,1,1},0)=="101.00.09");
         var origin=new Uri("https://gearlink.asus.com/firmware-update-tools/7489/windows/manifest.json");check(FirmwareCatalog.ToolUri(origin,7489,"./Firmware Tool.zip").Host=="gearlink.asus.com");
         foreach(string path in new string[]{"https://example.com/tool.zip","./../../7489/tool.zip","./tool.exe","./\\example.com\\tool.zip"}){blocked=false;try{FirmwareCatalog.ToolUri(origin,7489,path);}catch(IOException){blocked=true;}check(blocked);}
         Console.WriteLine(Json.Serialize(Obj("ok",true,"hardwareAccess",false,"suite","extended_features","tests",tests)));
+    }
+}
+
+// OpenAC's independent implementation of exact public GearLink wire fields.
+// Related product names do not inherit this m709/p725 lighting capability.
+internal static partial class GearLinkWorker
+{
+    internal static void ReadPeripheralLighting(GearHid hid,GearDescriptor d,byte report,string kind,Dictionary<string,object> snapshot,List<string> caps,List<object> errors)
+    {
+        if(kind=="keyboard"&&LegacyKeyboard(d.Pid)) {
+            QueryField(hid,report,Packet(0x25,14,0),"lighting",errors,b=>{snapshot["lighting"]=ParseKeyboardStaticRecipe(b,snapshot);caps.Add("lighting");});
+            QueryField(hid,report,Packet(0x27,0,0),"lightingSoftwareMode",errors,b=>{snapshot["lightingSoftwareMode"]=ReadBoolean(b,4);caps.Add("lightingSoftwareMode");});
+            QueryField(hid,report,Packet(0x12,22,0),"windowsLightingEnabled",errors,b=>{snapshot["windowsLightingEnabled"]=ReadBoolean(b,4);caps.Add("windowsLightingEnabled");});
+        } else if(kind=="mouse"&&(d.Pid==7546||d.Pid==7548)) {
+            // Exact p725 UI advertises area0 Logo; do not infer All/Scroll zones.
+            QueryField(hid,report,Packet(0x12,3,0),"lighting",errors,b=>{snapshot["lighting"]=ParseMouseLighting(b);caps.Add("lighting");});
+            QueryField(hid,report,Packet(0x12,0,12),"lightingSoftwareMode",errors,b=>{snapshot["lightingSoftwareMode"]=ReadBoolean(b,4);caps.Add("lightingSoftwareMode");});
+            QueryField(hid,report,Packet(0x12,0,9),"windowsLightingEnabled",errors,b=>{snapshot["windowsLightingEnabled"]=ReadBoolean(b,4);caps.Add("windowsLightingEnabled");});
+        }
+        bool available=PeripheralLightingReady(kind,d.Pid,snapshot);snapshot["uniformStaticLightingProtocolAvailable"]=available;snapshot["uniformStaticLightingReady"]=available&&snapshot["lightingSoftwareMode"] is bool&&!(bool)snapshot["lightingSoftwareMode"];
+    }
+    internal static Dictionary<string,object> ParseKeyboardStaticRecipe(byte[] b,Dictionary<string,object> snapshot)
+    {
+        Require(b,18);if(b[5]>100||!new byte[]{0,1,16,17}.Contains(b[6])||b[7]!=255||b[8]!=255)throw new IOException("Unknown keyboard static recipe fields.");
+        object mode;int? current=snapshot.TryGetValue("lightingEffectCode",out mode)&&mode is int&&new[]{0,1,2,3,4,5,6,7,8,9}.Contains((int)mode)?(int?)mode:null;
+        object profiles;bool confirmed=snapshot.TryGetValue("profileCount",out profiles)&&profiles is int&&(int)profiles>0;
+        return Obj("currentMode",confirmed?(object)current:null,"recipeMode",0,"area",0,"areaName","Main","speed",(int)b[4],"brightness",(int)b[5],"flags",(int)b[6],"color",b.Skip(9).Take(3).Select(v=>(int)v).ToArray(),"secondaryColor",b.Skip(12).Take(3).Select(v=>(int)v).ToArray(),"backgroundColor",b.Skip(15).Take(3).Select(v=>(int)v).ToArray(),"source","GearLink m709 static recipe 25/0E; current mode BasicInfo[9]");
+    }
+    internal static Dictionary<string,object> ParseMouseLighting(byte[] b)
+    {
+        Require(b,13);if(!new byte[]{0,1,2,3,4,5,6,240}.Contains(b[4])||b[5]>100||b[10]>1||b[11]>1)throw new IOException("Unknown mouse lighting response fields.");
+        return Obj("currentMode",(int)b[4],"area",0,"areaName","Logo","brightness",(int)b[5],"color",b.Skip(6).Take(3).Select(v=>(int)v).ToArray(),"direction",(int)b[10],"random",b[11]==1,"speed",(int)b[12],"source","GearLink p725 area0 12/03; getter direction offset10, setter offset9");
+    }
+    internal static bool PeripheralLightingReady(string kind,int pid,Dictionary<string,object> snapshot)
+    {
+        object v;var lighting=snapshot.TryGetValue("lighting",out v)?v as Dictionary<string,object>:null;
+        object sw,wdl;if(lighting==null||!snapshot.TryGetValue("lightingSoftwareMode",out sw)||!(sw is bool)||!snapshot.TryGetValue("windowsLightingEnabled",out wdl)||!(wdl is bool)||(bool)wdl)return false;
+        if(!lighting.TryGetValue("currentMode",out v)||!(v is int))return false;
+        try {
+            Integer(lighting["brightness"],0,100);LightingRgb(lighting["color"]);Integer(lighting["speed"],0,255);
+            if(kind=="keyboard"&&LegacyKeyboard(pid)){Integer(lighting["currentMode"],0,9);Integer(lighting["recipeMode"],0,0);LightingRgb(lighting["secondaryColor"]);LightingRgb(lighting["backgroundColor"]);return new[]{0,1,16,17}.Contains(Integer(lighting["flags"],0,17));}
+            return kind=="mouse"&&(pid==7546||pid==7548)&&new[]{0,1,2,3,4,5,6,240}.Contains((int)v)&&Integer(lighting["direction"],0,1)>=0&&lighting["random"] is bool;
+        }catch(Exception){return false;}
+    }
+    internal static int[] LightingRgb(object value)
+    {
+        var values=value as System.Collections.IEnumerable;if(values==null||value is string)throw new ArgumentException("Color must be three RGB bytes.");var result=new List<int>();foreach(object item in values)result.Add(Integer(item,0,255));if(result.Count!=3)throw new ArgumentException("Color must be three RGB bytes.");return result.ToArray();
+    }
+    internal static byte[] BuildPeripheralStaticLighting(string kind,object value,Dictionary<string,object> before)
+    {
+        var request=ValueObject(value,"color","brightness");int[] rgb=LightingRgb(request["color"]);int brightness=Integer(request["brightness"],0,100);object p;if(!before.TryGetValue("modelPid",out p)||!(p is int))throw new ArgumentException("Exact lighting model identity is unknown.");if(!PeripheralLightingReady(kind,(int)p,before))throw new ArgumentException("Current lighting state or lighting ownership is not confirmed.");
+        if((bool)before["lightingSoftwareMode"])throw new ArgumentException("Release the confirmed software lighting mode before setting a hardware static color.");
+        var prior=(Dictionary<string,object>)before["lighting"];byte speed=(byte)Integer(prior["speed"],0,255);
+        if(kind=="keyboard")return Packet(0x51,44,0,speed,(byte)brightness,0,255,255,(byte)rgb[0],(byte)rgb[1],(byte)rgb[2],0,0,0,0,0,0);
+        return Packet(0x51,40,0,0,(byte)brightness,(byte)rgb[0],(byte)rgb[1],(byte)rgb[2],(byte)Integer(prior["direction"],0,1),0,speed);
+    }
+    internal static bool MatchesPeripheralStaticLighting(object value,Dictionary<string,object> snapshot)
+    {
+        try {
+            var request=ValueObject(value,"color","brightness");object v;var prior=snapshot.TryGetValue("lighting",out v)?v as Dictionary<string,object>:null;if(prior==null||!(prior["currentMode"] is int)||(int)prior["currentMode"]!=0)return false;
+            if(Integer(prior["brightness"],0,100)!=Integer(request["brightness"],0,100)||!LightingRgb(prior["color"]).SequenceEqual(LightingRgb(request["color"])))return false;
+            if(prior.ContainsKey("recipeMode"))return Integer(prior["flags"],0,17)==0&&LightingRgb(prior["secondaryColor"]).All(i=>i==0)&&LightingRgb(prior["backgroundColor"]).All(i=>i==0);
+            return prior["random"] is bool&&!(bool)prior["random"];
+        }catch(Exception){return false;}
+    }
+    internal static bool IsPeripheralLightingQuery(string kind,byte[] packet){return kind=="keyboard"&&packet!=null&&packet.Length==4&&packet[2]==0&&packet[3]==0&&(packet[0]==0x25&&packet[1]==14||packet[0]==0x27&&packet[1]==0);}
+    internal static bool IsPeripheralLightingWrite(string kind,byte[] packet)
+    {
+        if(packet!=null&&packet.Length==5&&packet[2]==0&&packet[3]==0&&packet[4]<=1&&(kind=="keyboard"&&packet[0]==0x74&&packet[1]==0||kind=="mouse"&&packet[0]==0x51&&packet[1]==48))return true;
+        if(packet==null||packet.Length<4||packet[0]!=0x51||packet[2]!=0||packet[3]!=0)return false;
+        if(kind=="keyboard")return packet.Length==18&&packet[1]==44&&packet[5]<=100&&packet[6]==0&&packet[7]==255&&packet[8]==255&&packet.Skip(12).All(b=>b==0);
+        return kind=="mouse"&&packet.Length==12&&packet[1]==40&&packet[4]==0&&packet[5]<=100&&packet[9]<=1&&packet[10]==0;
+    }
+    internal static byte[] BuildPeripheralLightingSoftwareMode(string kind,object value,Dictionary<string,object> before)
+    {
+        byte mode=BooleanByte(value);object p,sw,wdl;if(!before.TryGetValue("modelPid",out p)||!(p is int)||!before.TryGetValue("lightingSoftwareMode",out sw)||!(sw is bool)||!before.TryGetValue("windowsLightingEnabled",out wdl)||!(wdl is bool)||(bool)wdl)throw new ArgumentException("Lighting ownership is not confirmed.");
+        if(kind=="keyboard"&&LegacyKeyboard((int)p))return Packet(0x74,0,0,mode);
+        if(kind=="mouse"&&((int)p==7546||(int)p==7548))return Packet(0x51,48,0,mode);
+        throw new ArgumentException("Unsupported software lighting route.");
     }
 }

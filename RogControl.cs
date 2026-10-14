@@ -34,9 +34,16 @@ namespace RogControl {
  }
  public class Profile { public string Name {get;set;} public string Effect {get;set;} public string Color {get;set;} public int Brightness {get;set;} public double Speed {get;set;} public string[] Devices {get;set;} }
  public class WorkerClient : IDisposable {
-  Process process; BlockingCollection<string> lines; readonly SemaphoreSlim gate=new SemaphoreSlim(1,1); int nextId; bool disposed; readonly string workerPath,arguments; readonly int timeout;
-  public WorkerClient(string path=null,int timeoutMs=15000,string args=""){workerPath=path??Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"DirectAuraWorker.exe");timeout=timeoutMs;arguments=args;}
+  Process process; object sessionIdentity; BlockingCollection<string> lines; readonly SemaphoreSlim gate=new SemaphoreSlim(1,1); int nextId; bool disposed; readonly string workerPath,arguments; readonly int timeout;
+  public WorkerClient(string path=null,int timeoutMs=15000,string args=""){
+   string resolved=path??Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"DirectAuraWorker.exe");
+   string previewRoot=AppDomain.CurrentDomain.GetData("OpenAC.PreviewWorkerRoot") as string;
+   string name=Path.GetFileName(resolved);
+   if(!String.IsNullOrEmpty(previewRoot)&&String.Equals(Path.GetDirectoryName(Path.GetFullPath(resolved)).TrimEnd(Path.DirectorySeparatorChar),AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar),StringComparison.OrdinalIgnoreCase)&&new[]{"DirectAuraWorker.exe","SDKWorker.exe","GearLinkWorker.exe","StorageWorker.exe","AudioEndpointWorker.exe","DiscoveryWorker.exe","NotebookWorker.exe","FanNativeWorker.exe","WindowsBrightnessWorker.exe"}.Contains(name,StringComparer.OrdinalIgnoreCase))resolved=Path.Combine(previewRoot,name);
+   workerPath=resolved;timeout=timeoutMs;arguments=args;
+  }
   public bool Running {get {try{return process!=null&&!process.HasExited;}catch{return false;}}}
+  public object SessionIdentity {get{return Running?sessionIdentity:null;}}
   void Start() {
    if(disposed)throw new ObjectDisposedException("设备接口已关闭");
    if(Running)return;
@@ -47,27 +54,46 @@ namespace RogControl {
     StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8,WorkingDirectory=AppDomain.CurrentDomain.BaseDirectory};
    process.OutputDataReceived+=(s,e)=>{if(e.Data!=null)channel.Add(e.Data);};
    process.ErrorDataReceived+=(s,e)=>{};
-   process.Start();process.BeginOutputReadLine();process.BeginErrorReadLine();
+   sessionIdentity=null;process.Start();sessionIdentity=new object();process.BeginOutputReadLine();process.BeginErrorReadLine();
   }
   public Task<Reply> Request(Dictionary<string,object> request) {return Request<Reply>(request);}
-  public async Task<T> Request<T>(Dictionary<string,object> request) {
-   await gate.WaitAsync();
+  public Task<T> Request<T>(Dictionary<string,object> request) {return Request<T>(request,null);}
+  public Task<T> Request<T>(Dictionary<string,object> request,object expectedSession) {return Request<T>(request,expectedSession,timeout);}
+  public Task<T> Request<T>(Dictionary<string,object> request,object expectedSession,int budgetMs) {return Request<T>(request,expectedSession,budgetMs,null);}
+  public async Task<T> Request<T>(Dictionary<string,object> request,object expectedSession,int budgetMs,Action beforeSend) {
+   if(budgetMs<1||budgetMs>timeout)throw new ArgumentOutOfRangeException("budgetMs");var requestClock=Stopwatch.StartNew();
+   if(!await gate.WaitAsync(budgetMs))throw new System.TimeoutException("设备请求排队超时，没有发送设置。");
    try {
-    Start(); int id=++nextId;request["id"]=id;var json=new JavaScriptSerializer();process.StandardInput.WriteLine(json.Serialize(request));process.StandardInput.Flush();
+    if(disposed)throw new ObjectDisposedException("设备接口已关闭");
+    if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已失效，请重新读取后应用。");
+    if(requestClock.ElapsedMilliseconds>=budgetMs)throw new System.TimeoutException("设备请求排队超时，没有发送设置。");
+    Start();
+    if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已改变，请重新读取后应用。");
+    if(requestClock.ElapsedMilliseconds>=budgetMs){Kill();throw new System.TimeoutException("设备启动超时，没有发送设置。");}
+    // Revalidate permission/topology after acquiring the lane. A rejected
+    // queued command must not get an ID, write a frame or kill another session.
+    if(beforeSend!=null)beforeSend();
+    if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已改变，请重新读取后应用。");
+    if(requestClock.ElapsedMilliseconds>=budgetMs)throw new System.TimeoutException("设备请求验证超时，没有发送设置。");
+    int id=++nextId;request["id"]=id;var json=new JavaScriptSerializer();
+    // The Framework writer inherits the parent's console encoding and may
+    // prepend a BOM. JSON-lines workers need a predictable UTF-8 frame.
+    byte[] frame=new UTF8Encoding(false).GetBytes(json.Serialize(request)+"\n");var input=process.StandardInput.BaseStream;input.Write(frame,0,frame.Length);input.Flush();
     return await Task.Run(()=>{
-     Stopwatch clock=Stopwatch.StartNew();string line;
-     while(clock.ElapsedMilliseconds<timeout){
-      if(lines.TryTake(out line,250)) {
+     Stopwatch clock=requestClock;string line;
+     while(clock.ElapsedMilliseconds<budgetMs){
+      if(lines.TryTake(out line,Math.Max(1,Math.Min(250,budgetMs-(int)clock.ElapsedMilliseconds)))) {
        Dictionary<string,object> result;try{result=json.Deserialize<Dictionary<string,object>>(line);}catch{continue;}
        if(result!=null&&result.ContainsKey("id")&&Convert.ToInt32(result["id"])==id)return json.Deserialize<T>(line);
       }
       if(process.HasExited)throw new InvalidOperationException("硬件工作进程已退出。错误码 0x"+unchecked((uint)process.ExitCode).ToString("X8")+"。本次请求未成功，界面可继续操作。");
      }
-     Kill();throw new System.TimeoutException("设备接口超时（"+(timeout/1000.0).ToString("0.##")+" 秒）。已结束工作进程，界面可继续操作。硬件设置可能保留最后一次应用的状态。");
+     Kill();throw new System.TimeoutException("设备接口超时（"+(budgetMs/1000.0).ToString("0.##")+" 秒）。已结束工作进程，界面可继续操作。硬件设置可能保留最后一次应用的状态。");
     });
    } finally {gate.Release();}
   }
-  public void Kill() { try{if(Running)process.Kill();}catch{} try{if(process!=null)process.Dispose();}catch{} process=null; }
+  public static void ObserveFailure(Task pending){pending.ContinueWith(t=>{var observed=t.Exception;},TaskContinuationOptions.OnlyOnFaulted);}
+  public void Kill() { sessionIdentity=null;try{if(Running)process.Kill();}catch{} try{if(process!=null)process.Dispose();}catch{} process=null; }
   public void Dispose() {disposed=true;Kill();}
  }
  public static class Inventory {
@@ -125,7 +151,7 @@ namespace RogControl {
  public partial class MainWindow:Window {
   readonly Brush bg=Brush("#101010"),panel=Brush("#1C1C1C"),border=Brush("#3C3C3C"),text=Brush("#F1F1F1"),muted=Brush("#AAAAAA"),accent=Brush("#D7BF6C"),green=Brush("#89BFA4");
   readonly Dictionary<string,Button> navigation=new Dictionary<string,Button>();
-  StackPanel content; TextBlock status; readonly WorkerClient worker=new WorkerClient();
+  StackPanel content,fixedPageHeader; ScrollViewer pageScroll; string fixedPageHeaderKey=""; TextBlock status; readonly WorkerClient worker=new WorkerClient();
   readonly Dictionary<string,WorkerClient> sdkWorkers=new Dictionary<string,WorkerClient>();
   readonly Dictionary<string,List<Peripheral>> peripherals=new Dictionary<string,List<Peripheral>>();
   readonly Dictionary<string,Dictionary<string,object>> sdkSnapshots=new Dictionary<string,Dictionary<string,object>>();
@@ -136,20 +162,20 @@ namespace RogControl {
   string effect="static",color="#FF466A"; int brightness=100; double speed=3; readonly HashSet<string> selected=new HashSet<string>();
   readonly string dataDir=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data");
   readonly bool render;
-  public MainWindow(bool renderOnly){
-   render=renderOnly;Title="OpenAC · 非官方重制预览版 0.3";Width=1538;Height=860;MinWidth=1180;MinHeight=760;WindowStartupLocation=WindowStartupLocation.CenterScreen;Background=bg;Foreground=text;FontFamily=new FontFamily("Microsoft YaHei UI");FontSize=14;
+  public MainWindow(bool renderOnly):this(renderOnly,false){}
+  public MainWindow(bool renderOnly,bool previewReload){
+   render=renderOnly;RestoreLivePreviewControlSession(previewReload);InitializeWindowsTools();LoadPreviewAssets();LoadUiPreferences();Title="OpenAC · 非官方重制预览版 0.3";Width=1538;Height=860;MinWidth=1180;MinHeight=760;WindowStartupLocation=WindowStartupLocation.CenterScreen;Background=bg;Foreground=text;FontFamily=new FontFamily("Microsoft YaHei UI");FontSize=14;
    SourceInitialized+=(s,e)=>{try{int enabled=1;DwmSetWindowAttribute(new System.Windows.Interop.WindowInteropHelper(this).Handle,20,ref enabled,4);}catch{}};
    BuildStyles(); var root=new Grid{Background=bg};root.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(248)});root.ColumnDefinitions.Add(new ColumnDefinition());
    root.Children.Add(BuildOriginalNavigation());
-   var main=new Grid{Margin=new Thickness(22,18,22,8)};main.RowDefinitions.Add(new RowDefinition());main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});Grid.SetColumn(main,1);root.Children.Add(main);
-   content=new StackPanel();var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled};main.Children.Add(scroll);
-   status=Label("就绪 · 打开窗口不会改变硬件设置",11,muted);status.TextWrapping=TextWrapping.Wrap;status.MaxHeight=42;status.Margin=new Thickness(0,14,0,0);Grid.SetRow(status,1);main.Children.Add(status);Content=root;
-   Closing+=async(s,e)=>{if(closing){e.Cancel=!closeReady;return;}e.Cancel=true;closing=true;if(monitorTimer!=null)monitorTimer.Stop();status.Text="正在结束设备连接与宏…";try{await StopMacroFeaturesAsync();await StopScenarioFeaturesAsync();gearWorker.Dispose();storageWorker.Dispose();DisposeOriginalWindowsAudio();DisposeOriginalDiscovery();foreach(var sdk in sdkWorkers.Values)sdk.Dispose();if(controlling)try{await worker.Request(new Dictionary<string,object>{{"op","shutdown"}});}catch{}worker.Dispose();}finally{FinishWindowClose();}};
-   BeginMonitoring();ShowPage("控制面板");if(!render)Loaded+=async(s,e)=>{await RefreshInventory();if(closing)return;await ScanAura();};
-   if(!render){var timer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(3)};timer.Tick+=async(s,e)=>{if(!controlling||busy||closing)return;try{var response=await worker.Request(new Dictionary<string,object>{{"op","status"}});controlling=response.controlled;if(!String.IsNullOrEmpty(response.animationError)){auraMessage="动画已停止："+response.animationError;Log(auraMessage);if(page=="灯效 & Aura Sync")ShowPage(page);}}catch(Exception ex){controlling=false;auraMessage=ex.Message;Log("灯效连接中断："+ex.Message);if(page=="灯效 & Aura Sync")ShowPage(page);}};timer.Start();}
+   var main=new Grid{Margin=new Thickness(22,18,22,8)};main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});main.RowDefinitions.Add(new RowDefinition());main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});Grid.SetColumn(main,1);root.Children.Add(main);
+   fixedPageHeader=new StackPanel();main.Children.Add(fixedPageHeader);content=new StackPanel();pageScroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled};Grid.SetRow(pageScroll,1);main.Children.Add(pageScroll);
+   status=Label("就绪",11,muted);status.TextWrapping=TextWrapping.Wrap;status.MaxHeight=42;status.Margin=new Thickness(0,14,0,0);Grid.SetRow(status,2);main.Children.Add(status);Content=root;BeginOriginalPixelLayout();
+   Closing+=async(s,e)=>{if(closing){e.Cancel=!closeReady;return;}e.Cancel=true;closing=true;if(monitorTimer!=null)monitorTimer.Stop();if(windowsBatteryTimer!=null)windowsBatteryTimer.Stop();if(pageReadTimer!=null)pageReadTimer.Stop();if(previewStateTimer!=null)previewStateTimer.Stop();status.Text="正在结束设备连接与宏…";try{await WaitMouseCalibrationWorkflow();await StopAllAuraTargetsAsync();await WaitDeviceHotplugAsync();await DisposeFanNativeAsync();await DisposeWindowsBrightnessAsync();await WaitWindowsToolsAsync();await DisposeNotebookStatusAsync();await DisposeMonitoringAsync();await StopMacroFeaturesAsync();await StopScenarioFeaturesAsync();gearWorker.Dispose();storageWorker.Dispose();DisposeOriginalWindowsAudio();DisposeOriginalDiscovery();foreach(var sdk in sdkWorkers.Values)sdk.Dispose();worker.Dispose();}finally{FinishWindowClose();}};
+   BeginDeviceHotplugMonitoring();BeginMouseCalibrationInput();BeginMonitoring();BeginWindowsBatteryPolling();BeginNotebookStateExpiry();BeginPageReads();BeginPreviewSnapshots();ShowPage(ResolveUiStartupPage());if(!render&&!previewReload)Loaded+=async(s,e)=>{await RefreshInventory();if(closing)return;await ScanAura();};
   }
   [System.Runtime.InteropServices.DllImport("dwmapi.dll")]static extern int DwmSetWindowAttribute(IntPtr window,int attribute,ref int value,int size);
-  static Brush Brush(string hex){return (Brush)new BrushConverter().ConvertFromString(hex);}
+  static Brush Brush(string hex){var brush=(Brush)new BrushConverter().ConvertFromString(hex);return brush.IsFrozen?brush.Clone():brush;}
   void BuildStyles(){
    var buttonStyle=new Style(typeof(Button));buttonStyle.Setters.Add(new Setter(Control.ForegroundProperty,text));buttonStyle.Setters.Add(new Setter(Control.BackgroundProperty,panel));buttonStyle.Setters.Add(new Setter(Control.BorderBrushProperty,border));buttonStyle.Setters.Add(new Setter(Control.BorderThicknessProperty,new Thickness(1)));buttonStyle.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(16,10,16,10)));buttonStyle.Setters.Add(new Setter(Control.FontSizeProperty,13.0));buttonStyle.Setters.Add(new Setter(Control.CursorProperty,System.Windows.Input.Cursors.Hand));
    var tpl=new ControlTemplate(typeof(Button));var frame=new FrameworkElementFactory(typeof(Border));frame.SetValue(Border.CornerRadiusProperty,new CornerRadius(0));frame.SetBinding(Border.BackgroundProperty,new System.Windows.Data.Binding("Background"){RelativeSource=new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)});frame.SetBinding(Border.BorderBrushProperty,new System.Windows.Data.Binding("BorderBrush"){RelativeSource=new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)});frame.SetBinding(Border.BorderThicknessProperty,new System.Windows.Data.Binding("BorderThickness"){RelativeSource=new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)});frame.SetBinding(Border.PaddingProperty,new System.Windows.Data.Binding("Padding"){RelativeSource=new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)});var presenter=new FrameworkElementFactory(typeof(ContentPresenter));presenter.SetBinding(ContentPresenter.HorizontalAlignmentProperty,new System.Windows.Data.Binding("HorizontalContentAlignment"){RelativeSource=new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)});frame.AppendChild(presenter);tpl.VisualTree=frame;var hover=new Trigger{Property=UIElement.IsMouseOverProperty,Value=true};hover.Setters.Add(new Setter(UIElement.OpacityProperty,0.82));tpl.Triggers.Add(hover);var disabled=new Trigger{Property=UIElement.IsEnabledProperty,Value=false};disabled.Setters.Add(new Setter(UIElement.OpacityProperty,0.4));tpl.Triggers.Add(disabled);buttonStyle.Setters.Add(new Setter(Control.TemplateProperty,tpl));Resources.Add(typeof(Button),buttonStyle);
@@ -161,8 +187,13 @@ namespace RogControl {
   StackPanel Box(string heading,string desc){var p=new StackPanel();p.Children.Add(Label(heading,18,text,FontWeights.SemiBold));if(!String.IsNullOrEmpty(desc))p.Children.Add(Paragraph(desc,12,muted));return p;}
   StackPanel Row(){return new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,12,0,0)};}
   void Header(string title,string subtitle){content.Children.Add(Label(title,28,text,FontWeights.SemiBold));if(!String.IsNullOrEmpty(subtitle))content.Children.Add(Paragraph(subtitle,13,muted));content.Children.Add(new Border{Height=12});}
+  void PinPageHeader(int childCount,string layoutKey){
+   if(childCount<0||childCount>content.Children.Count)throw new ArgumentOutOfRangeException("childCount");
+   for(int index=0;index<childCount;index++){var child=content.Children[0];content.Children.RemoveAt(0);fixedPageHeader.Children.Add(child);}
+   if(fixedPageHeaderKey!=layoutKey){pageScroll.ScrollToTop();fixedPageHeaderKey=layoutKey;}
+  }
   void FinishWindowClose(){closeReady=true;Dispatcher.BeginInvoke(new Action(Close));}
-  void ShowPage(string value){OnScenarioNavigation(value);OnMacroNavigation(value);page=value;liveMonitorLabels.Clear();content.Children.Clear();UpdateOriginalNavigation();switch(value){case "控制面板":case "总览":OriginalDashboard();break;case "设备":OriginalDeviceGallery();break;case "灯效 & Aura Sync":case "神光同步":OriginalAuraPage();break;case "设置":OriginalSettingsPage();break;case "情境设置档":OriginalScenarioPage();break;case "宏":OriginalMacroPage();break;case "游戏库":OriginalGameLibraryPage();break;case "Fan Xpert":OriginalFanXpertPage();break;case "device:motherboard":OriginalMotherboardPage();break;case "device:fan":OriginalControllerPage();break;case "device:receiver":OriginalReceiverPage();break;case "device:headset":OriginalGearDevicePage("headset");break;case "device:mouse":OriginalGearDevicePage("mouse");break;case "device:keyboard":OriginalGearDevicePage("keyboard");break;default:if(value.StartsWith("device:discovered:",StringComparison.Ordinal))OriginalDiscoveredDevicePage(value.Substring("device:discovered:".Length));else if(value.StartsWith("device:",StringComparison.Ordinal))OriginalUnknownDevice(value.Substring(7));else OriginalPendingPage(value);break;}}
+  void ShowPage(string value){if(value=="设置")value="更新库";OnAuraAnimationNavigation(value);OnMouseCalibrationNavigation(value);OnScenarioNavigation(value);OnMacroNavigation(value);if(page!=value)pageScroll.ScrollToTop();page=value;RememberUiPage(value);QueuePageRead(value);liveMonitorLabels.Clear();content.Children.Clear();fixedPageHeader.Children.Clear();UpdateOriginalNavigation();switch(value){case "控制面板":case "总览":OriginalDashboard();break;case "系统监控":OriginalSystemMonitoringPage();break;case "设备":OriginalDeviceGallery();break;case "灯效 & Aura Sync":case "神光同步":OriginalAuraPage();break;case "更新库":OriginalSettingsPage();break;case "情境设置档":OriginalScenarioPage();break;case "宏":OriginalMacroPage();break;case "游戏库":OriginalGameLibraryPage();break;case "GameFirst":OriginalGameFirstPage();break;case "工具":OriginalToolsPage();break;case "设备兼容":Header("设备兼容","");OriginalDiscoveryGallery(content);break;case "驱动程序更新":OriginalAsusDriverUpdatePage();break;case "Windows 电源":OriginalWindowsPowerPage();break;case "屏幕设置":OriginalWindowsDisplayPage();break;case "电池信息":OriginalWindowsBatteryPage();break;case "笔记本与掌机":OriginalNotebookPage();break;case "Fan Xpert":OriginalFanXpertPage();break;case "device:motherboard":OriginalMotherboardPage();break;case "device:fan":OriginalControllerPage();break;case "device:receiver":OriginalReceiverPage();break;case "device:gpu":OriginalGpuLightingPage();break;case "device:headset":OriginalGearDevicePage("headset");break;case "device:mouse":OriginalGearDevicePage("mouse");break;case "device:keyboard":OriginalGearDevicePage("keyboard");break;default:if(value.StartsWith("device:discovered:",StringComparison.Ordinal))OriginalDiscoveredDevicePage(value.Substring("device:discovered:".Length));else if(value.StartsWith("device:",StringComparison.Ordinal))OriginalUnknownDevice(value.Substring(7));else OriginalPendingPage(value);break;}}
   static IEnumerable<string> Flatten(object value,string prefix,int depth){
    if(depth>5||value==null)yield break;
    var map=value as IDictionary<string,object>;
@@ -174,17 +205,17 @@ namespace RogControl {
   WorkerClient Sdk(string kind){WorkerClient client;if(!sdkWorkers.TryGetValue(kind,out client)){client=new WorkerClient(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"SDKWorker.exe"),kind=="lcd"?25000:15000,kind);sdkWorkers[kind]=client;}return client;}
   static string SdkError(object error){var map=error as IDictionary<string,object>;object message;if(map!=null&&map.TryGetValue("message",out message))return Convert.ToString(message);return Convert.ToString(error)??"设备接口未返回错误详情。";}
   async Task ReadOriginalSnapshot(string kind,string id){
-   if(busy||closing||render)return;busy=true;status.Text="正在读取设备状态…";
-   try{var result=await Sdk(kind).Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));object confirmed;if(result.data==null||!result.data.TryGetValue("readbackConfirmed",out confirmed)||!Object.Equals(confirmed,true))throw new InvalidOperationException("接口未返回已确认的设备数据。");result.data["capturedAt"]=DateTime.Now.ToString("o");sdkSnapshots[kind+":"+id]=result.data;Log("设备状态已读回 · "+DateTime.Now.ToString("HH:mm:ss")+" · 显示本次设备快照。");}
-   catch(Exception e){sdkSnapshots.Remove(kind+":"+id);Log("读取失败："+e.Message);}finally{busy=false;if(!closing)ShowPage(page);}
+   if(busy||AuraSyncBusy||closing||render)return;busy=true;status.Text="正在读取设备状态…";
+   try{long generation=DeviceHotplugGeneration;var client=Sdk(kind);var result=await client.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));object confirmed;if(result.data==null||!result.data.TryGetValue("readbackConfirmed",out confirmed)||!Object.Equals(confirmed,true)||OriginalStateText(result.data,"deviceId","")!=id)throw new InvalidOperationException("接口未返回已确认的原设备数据。");RememberSdkRead(kind,id,result.data,client,generation);Log("设备状态已读回 · "+DateTime.Now.ToString("HH:mm:ss")+" · 显示本次设备快照。");}
+   catch(Exception e){ForgetSdkRead(kind,id);Log("读取失败："+e.Message);}finally{busy=false;if(!closing)ShowPage(page);}
   }
-  async Task ScanPeripheral(string kind){if(busy)return;busy=true;status.Text="正在读取 "+kind+" SDK…";try{var result=await Sdk(kind).Request<SdkReply>(new Dictionary<string,object>{{"op","scan"},{"kind",kind}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));object list;var json=new JavaScriptSerializer();peripherals[kind]=result.data!=null&&result.data.TryGetValue("devices",out list)?json.Deserialize<List<Peripheral>>(json.Serialize(list)):new List<Peripheral>();peripheralMessage="读取完成 · "+kind+" · "+peripherals[kind].Count+" 个设备。设置写入尚未接通。";Log(peripheralMessage);}catch(Exception e){peripheralMessage=kind+" 读取失败："+e.Message;Log(peripheralMessage);}finally{busy=false;ShowPage(page);}}
-  async Task ReadPeripheral(string kind,string id){if(busy)return;busy=true;status.Text="正在读取设备信息…";try{var result=await Sdk(kind).Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));sdkSnapshots[kind+":"+id]=result.data??new Dictionary<string,object>();peripheralMessage="已返回设备读取结果。请查看各字段是否读回成功。";Log(peripheralMessage);}catch(Exception e){peripheralMessage="设备读取失败："+e.Message;Log(peripheralMessage);}finally{busy=false;ShowPage(page);}}
-  void Log(string value){history.Add(DateTime.Now.ToString("HH:mm:ss")+" · "+value);if(history.Count>200)history.RemoveAt(0);status.Text=value;}
+  async Task ScanPeripheral(string kind){if(busy||AuraSyncBusy||closing||render)return;busy=true;status.Text="正在读取 "+kind+" SDK…";try{foreach(string key in sdkReadBindings.Keys.Where(key=>key.StartsWith(kind+":",StringComparison.Ordinal)).ToArray())sdkReadBindings.Remove(key);long generation=DeviceHotplugGeneration;var result=await Sdk(kind).Request<SdkReply>(new Dictionary<string,object>{{"op","scan"},{"kind",kind}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));if(closing||generation!=DeviceHotplugGeneration)throw new OperationCanceledException("设备连接已改变，请重新读取。");object list;var json=new JavaScriptSerializer();peripherals[kind]=result.data!=null&&result.data.TryGetValue("devices",out list)?json.Deserialize<List<Peripheral>>(json.Serialize(list)):new List<Peripheral>();peripheralMessage="读取完成 · "+kind+" · "+peripherals[kind].Count+" 个设备。设置写入尚未接通。";Log(peripheralMessage);}catch(Exception e){peripheralMessage=kind+" 读取失败："+e.Message;Log(peripheralMessage);}finally{busy=false;if(!closing)ShowPage(page);}}
+  async Task ReadPeripheral(string kind,string id){if(busy||AuraSyncBusy||closing||render)return;busy=true;status.Text="正在读取设备信息…";try{long generation=DeviceHotplugGeneration;var client=Sdk(kind);var result=await client.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}});if(!result.ok)throw new InvalidOperationException(SdkError(result.error));if(result.data==null||OriginalStateText(result.data,"deviceId","")!=id)throw new InvalidOperationException("设备读取目标不匹配。");RememberSdkRead(kind,id,result.data,client,generation);peripheralMessage="已返回设备读取结果。请查看各字段是否读回成功。";Log(peripheralMessage);}catch(Exception e){ForgetSdkRead(kind,id);peripheralMessage="设备读取失败："+e.Message;Log(peripheralMessage);}finally{busy=false;if(!closing)ShowPage(page);}}
+  void Log(string value){history.Add(DateTime.Now.ToString("HH:mm:ss")+" · "+value);if(history.Count>200)history.RemoveAt(0);status.Text=value.StartsWith("原生 USB 已识别",StringComparison.Ordinal)||value.StartsWith("本机状态已刷新",StringComparison.Ordinal)||value.StartsWith("设备状态已读回",StringComparison.Ordinal)?"":value;}
   async Task RefreshInventory(){status.Text="正在读取本机状态…";try{info=await Task.Run(()=>Inventory.Scan());Log("本机状态已刷新；没有更改硬件设置。");}catch(Exception e){Log("状态读取失败："+e.Message);}ShowPage(page);}
-  async Task ScanAura(){if(busy||closing||render)return;busy=true;status.Text="正在读取主板 USB 灯控…";try{var reply=await worker.Request(new Dictionary<string,object>{{"op","scan"}});if(!reply.ok)throw new InvalidOperationException(reply.error);devices=reply.devices??new List<AuraDevice>();selected.IntersectWith(devices.Select(d=>d.id));if(selected.Count==0)foreach(var d in devices)selected.Add(d.id);controlling=reply.controlled;auraMessage="原生 USB 已识别 "+devices.Count+" 个主板灯控 · "+(controlling?"已发送灯效请求":"仅读取状态")+"。灯效写入尚未实机验证。";Log(auraMessage);}catch(Exception e){devices.Clear();selected.Clear();auraMessage=e.Message;Log("Aura 扫描失败："+e.Message);}finally{busy=false;ShowPage(page);}}
-  async Task ApplyAura(){if(busy||closing||render||!experimentalLighting)return;if(selected.Count==0){MessageBox.Show(this,"请至少选择一个设备。","神光同步");return;}if(!System.Text.RegularExpressions.Regex.IsMatch(color,"^#[0-9a-fA-F]{6}$")){MessageBox.Show(this,"颜色请输入 #RRGGBB，例如 #FF466A。","神光同步");return;}busy=true;ShowPage(page);try{var reply=await worker.Request(new Dictionary<string,object>{{"op","apply"},{"effect",effect},{"color",color},{"brightness",brightness},{"speed",speed},{"devices",selected.ToArray()}});controlling=reply.controlled;if(!reply.ok)throw new InvalidOperationException(reply.error);auraMessage="灯效请求已接受 · "+selected.Count+" 个设备。实际效果需观察硬件确认。";if(reply.warnings!=null&&reply.warnings.Length>0)auraMessage+=" "+String.Join(" ",reply.warnings);Log(auraMessage);}catch(Exception e){auraMessage=e.Message;Log("应用失败："+e.Message);}finally{busy=false;ShowPage(page);}}
-  async Task ReleaseAura(){if(busy||closing||render)return;busy=true;try{var reply=await worker.Request(new Dictionary<string,object>{{"op","release"}});if(!reply.ok)throw new InvalidOperationException(reply.error);controlling=false;devices=reply.devices??new List<AuraDevice>();selected.IntersectWith(devices.Select(d=>d.id));auraMessage="连接已关闭。USB 控制器会保留最后的灯效，不会恢复先前配置。";Log(auraMessage);}catch(Exception e){auraMessage=e.Message;Log("释放失败："+e.Message);}finally{busy=false;ShowPage(page);}}
+  Task ScanAura(){return ScanAllAuraTargetsAsync();}
+  Task ApplyAura(){return ApplyAllAuraTargetsAsync();}
+  Task ReleaseAura(){return StopAllAuraTargetsAsync();}
   void SaveProfile(){try{Directory.CreateDirectory(dataDir);var dialog=new SaveFileDialog{Filter="灯效配置 (*.json)|*.json",InitialDirectory=dataDir,FileName="灯效配置.json"};if(dialog.ShowDialog(this)!=true)return;var profile=new Profile{Name=Path.GetFileNameWithoutExtension(dialog.FileName),Effect=effect,Color=color,Brightness=brightness,Speed=speed,Devices=selected.ToArray()};File.WriteAllText(dialog.FileName,new JavaScriptSerializer().Serialize(profile),new UTF8Encoding(false));Log("灯效配置已保存。配置不会自动应用。");}catch(Exception e){MessageBox.Show(this,e.Message,"保存失败");}}
   void LoadProfile(){try{Directory.CreateDirectory(dataDir);var dialog=new OpenFileDialog{Filter="灯效配置 (*.json)|*.json",InitialDirectory=dataDir};if(dialog.ShowDialog(this)!=true)return;if(new FileInfo(dialog.FileName).Length>1024*1024)throw new InvalidOperationException("配置文件过大。");var p=new JavaScriptSerializer().Deserialize<Profile>(File.ReadAllText(dialog.FileName));if(p==null||!new[]{"static","breathe","cycle","off"}.Contains(p.Effect)||!System.Text.RegularExpressions.Regex.IsMatch(p.Color??"","^#[0-9a-fA-F]{6}$")||Double.IsNaN(p.Speed)||Double.IsInfinity(p.Speed))throw new InvalidOperationException("配置格式无效。");effect=p.Effect;color=p.Color;brightness=Math.Max(0,Math.Min(100,p.Brightness));speed=Math.Max(1,Math.Min(10,p.Speed));selected.Clear();foreach(string id in p.Devices??new string[0])if(devices.Any(d=>d.id==id))selected.Add(id);Log("配置已载入；点击应用后才会改变灯效。");ShowPage(page);}catch(Exception e){MessageBox.Show(this,e.Message,"载入失败");}}
   void ExportReport(){

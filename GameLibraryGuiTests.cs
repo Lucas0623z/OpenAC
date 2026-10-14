@@ -1,0 +1,23 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using RogControl;
+
+public static class GameLibraryGuiTests {
+ static int checks;static readonly BindingFlags Hidden=BindingFlags.Instance|BindingFlags.NonPublic;
+ static void Check(bool value,string message){checks++;if(!value)throw new Exception(message);}
+ static object Field(MainWindow window,string name){return typeof(MainWindow).GetField(name,Hidden).GetValue(window);}
+ static void Set(MainWindow window,string name,object value){typeof(MainWindow).GetField(name,Hidden).SetValue(window,value);}
+ static object Invoke(MainWindow window,string name,params object[] values){return typeof(MainWindow).GetMethod(name,Hidden).Invoke(window,values);}
+ static IEnumerable<DependencyObject> Walk(DependencyObject node){yield return node;for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++)foreach(var child in Walk(VisualTreeHelper.GetChild(node,i)))yield return child;}
+ static FrameworkElement Layout(MainWindow window,int width){Invoke(window,"ShowPage","游戏库");var root=(FrameworkElement)window.Content;root.Measure(new Size(width,826));root.Arrange(new Rect(0,0,width,826));root.UpdateLayout();return root;}
+ [STAThread]public static int Main(){try{Run();return 0;}catch(Exception error){Console.WriteLine(error.GetType().Name+": "+error.Message);return 1;}}
+ static void Run(){var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};var window=new MainWindow(true);var games=Enumerable.Range(1,12).Select(i=>new GameEntry{Id="synthetic-"+i,Name="Synthetic game "+i,SteamId=i.ToString(),Source="Steam",Category=i%2==0?"Test A":"Test B",Favorite=i%3==0,LastPlayed=new DateTime(2026,1,i)}).ToList();Set(window,"games",games);
+  foreach(int width in new[]{1180,1538,2560}){var root=Layout(window,width);var gallery=(UniformGrid)Field(window,"gameCards");Check(gallery.Columns==3,"Original game grid keeps three columns");Check(gallery.ActualWidth<=1644&&gallery.ActualWidth>0,"Grid width is bounded at the observed wide-window size");var cards=gallery.Children.OfType<Border>().ToArray();Check(cards.Length==12,"All synthetic games remain reachable");foreach(var card in cards){Check(card.ActualWidth<=540&&card.ActualWidth>100,"Card width scales without changing column count");Check(Math.Abs(card.ActualHeight-card.ActualWidth*9/16)<1,"Card frame maintains its image ratio");}var nodes=Walk(root).ToArray();Check(nodes.OfType<Image>().Count()==0&&!(bool)Field(window,"gameCoverRootRead"),"Unshown layout never reads Steam registry or covers");foreach(var launch in nodes.OfType<Button>().Where(b=>Convert.ToString(b.Content)=="进入游戏")){Check(!launch.IsEnabled,"Render-only game launch is disabled");launch.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));}Check(games.All(g=>g.LastPlayed.Year==2026),"Render-only launch events never update played state");Check(!window.IsVisible&&new System.Windows.Interop.WindowInteropHelper(window).Handle==IntPtr.Zero,"No native window is created");}
+  Set(window,"gameCategory","Deleted category");Layout(window,1538);Check((string)Field(window,"gameCategory")=="全部","Removed category is normalized with its displayed choice");Check(((UniformGrid)Field(window,"gameCards")).Children.Count==12,"Removed category cannot silently hide all games");Set(window,"gameCategory","收藏");Layout(window,1538);Check(((UniformGrid)Field(window,"gameCards")).Children.Count==4,"Favorites filter retains the matching cards");Set(window,"gameCategory","全部");Set(window,"gameSearch","not-a-match");Layout(window,1538);Check(((UniformGrid)Field(window,"gameCards")).Children.Count==1,"Empty filter displays the scan entry");var buttons=Walk((FrameworkElement)window.Content).OfType<Button>().Where(b=>Convert.ToString(b.Content)=="搜索并列出游戏").ToArray();Check(buttons.Length==1&&!buttons[0].IsEnabled,"Empty render cannot trigger a real game scan");Invoke(window,"OpenGameLibraryMenu");Check(window.OwnedWindows.Count==0,"Render-only menu cannot create a native popup");Set(window,"gameSearch","");for(int i=0;i<8;i++)Layout(window,1538);Check((bool)Field(window,"gameCardResizeHooked"),"Resize registration remains installed for the single persistent body");Check(!(bool)Field(window,"gameCoverRootRead"),"Repeated layouts still do not access cover paths");Check(games.Count==12&&games.Count(g=>g.Favorite)==4,"Rendering never saves or mutates the library model");Console.WriteLine("PASS "+checks+" game library GUI checks; HWNDs=0; game scans=0; game launches=0; cover reads=0.");app.Shutdown();}
+}
