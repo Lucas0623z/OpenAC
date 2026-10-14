@@ -7,7 +7,7 @@ $compiler32 = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Direct Aura adapter build failed.' }
 & $compiler32 /nologo /target:exe /platform:x86 /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll ('/out:' + (Join-Path $PSScriptRoot 'SDKWorker.exe')) (Join-Path $PSScriptRoot 'SDKWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Installed SDK adapter build failed.' }
-& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'GearLinkWorker.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs')
+& $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + (Join-Path $PSScriptRoot 'GearLinkWorker.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Direct peripheral adapter build failed.' }
 & $compiler64 /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll /r:System.Management.dll /r:System.Numerics.dll ('/out:' + (Join-Path $PSScriptRoot 'StorageWorker.exe')) (Join-Path $PSScriptRoot 'StorageWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Storage adapter build failed.' }
@@ -118,7 +118,7 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Windows display checks build failed.' }
  & (Join-Path $PSScriptRoot 'WindowsDisplayTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Windows display checks failed.' }
- & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /main:PeripheralLightingTests ('/out:' + (Join-Path $PSScriptRoot 'PeripheralLightingTests.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs') (Join-Path $PSScriptRoot 'PeripheralLightingTests.cs')
+ & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll /main:PeripheralLightingTests ('/out:' + (Join-Path $PSScriptRoot 'PeripheralLightingTests.exe')) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs') (Join-Path $PSScriptRoot 'PeripheralLightingTests.cs')
  if ($LASTEXITCODE -ne 0) { throw 'Peripheral lighting checks build failed.' }
  & (Join-Path $PSScriptRoot 'PeripheralLightingTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Peripheral lighting checks failed.' }
@@ -138,7 +138,14 @@ if ($RunChecks -or $HardwareReadOnlyChecks) {
  if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks build failed.' }
  & (Join-Path $PSScriptRoot 'NotebookGuiTests.exe')
  if ($LASTEXITCODE -ne 0) { throw 'Notebook GUI checks failed.' }
- foreach ($taskGuiTest in @('MousePerformanceGuiTests','OriginalPixelLayoutTests','GearPowerGuiTests','KeyboardViewsGuiTests','KeyboardLightingGuiTests','HeadsetAudioGuiTests','MotherboardGuiTests','LcdSettingsGuiTests','LcdMonitorGuiTests','GameLibraryGuiTests','ReceiverGuiTests','ScenarioGuiTests','GameFirstGuiTests','MacroGuiTests','checks\MouseButtonsChecks','checks\MouseLightingChecks','checks\MouseCalibrationZoneChecks','checks\MousePageLifecycleChecks')) {
+
+ foreach ($taskProtocolTest in @('MouseLightingProtocolTests','MouseSensorProtocolTests','MouseButtonActionProtocolTests','MouseProtocolIntegrationTests')) {
+  & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/main:' + $taskProtocolTest) ('/out:' + (Join-Path $PSScriptRoot ($taskProtocolTest + '.exe'))) (Join-Path $PSScriptRoot 'GearLinkWorker.cs') (Join-Path $PSScriptRoot 'WorkerTextProtocol.cs') (Join-Path $PSScriptRoot 'GearLinkFeatures.cs') (Join-Path $PSScriptRoot 'GearLinkMouseSensor.cs') (Join-Path $PSScriptRoot 'GearLinkMouseLighting.cs') (Join-Path $PSScriptRoot 'GearLinkMouseOperations.cs') (Join-Path $PSScriptRoot 'MouseButtonActionFacts.cs') (Join-Path $PSScriptRoot 'FirmwareCatalog.cs') (Join-Path $PSScriptRoot ($taskProtocolTest + '.cs'))
+  if ($LASTEXITCODE -ne 0) { throw ('Mouse protocol test build failed: ' + $taskProtocolTest) }
+  & (Join-Path $PSScriptRoot ($taskProtocolTest + '.exe'))
+  if ($LASTEXITCODE -ne 0) { throw ('Mouse protocol tests failed: ' + $taskProtocolTest) }
+ }
+ foreach ($taskGuiTest in @('MousePerformanceGuiTests','OriginalPixelLayoutTests','GearPowerGuiTests','KeyboardViewsGuiTests','KeyboardLightingGuiTests','HeadsetAudioGuiTests','MotherboardGuiTests','LcdSettingsGuiTests','LcdMonitorGuiTests','GameLibraryGuiTests','ReceiverGuiTests','ScenarioGuiTests','GameFirstGuiTests','MacroGuiTests','checks\MouseButtonsChecks','checks\MouseLightingChecks','checks\MouseCalibrationZoneChecks','checks\MousePageLifecycleChecks','MouseCalibrationWorkflowTests','DeviceHotplugTests')) {
   $taskGuiTestExecutable = Join-Path $PSScriptRoot ((Split-Path -Leaf $taskGuiTest) + '.exe')
   & $compiler64 /nologo /target:exe /platform:x64 /r:System.Web.Extensions.dll ('/r:' + (Join-Path $PSScriptRoot 'OpenAC.exe')) /r:System.Xaml.dll ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationFramework.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\PresentationCore.dll') ('/r:' + (Split-Path $compiler64) + '\WPF\WindowsBase.dll') ('/out:' + $taskGuiTestExecutable) (Join-Path $PSScriptRoot ($taskGuiTest + '.cs'))
   if ($LASTEXITCODE -ne 0) { throw ($taskGuiTest + ' build failed.') }

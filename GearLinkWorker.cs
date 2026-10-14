@@ -60,9 +60,11 @@ internal static partial class GearLinkWorker
         if (kind!="mouse"&&kind!="keyboard"&&kind!="headset"&&kind!="omni") throw new ArgumentException("Unsupported device kind.");
         if(op=="firmware") return FirmwareCatalog.Read(kind);
         var descriptors=Discover().Where(d=>Kind(d.Pid)==kind && d.Usage==1 && d.Page>=0xFF00 && d.Page<=0xFF02 && d.OutputLength>4 && (kind!="omni"||d.Page==0xFF02)).ToList();
+        if(op=="enumerate")return Obj("devices",descriptors.Select(d=>d.Metadata()).ToArray());
         if(op=="scan") return Obj("devices",descriptors.Select(d=>Read(d)).ToArray());
         var target=descriptors.FirstOrDefault(d=>d.Id==Text(req,"deviceId"));
         if(target==null) throw new ArgumentException("Device is disconnected or the device ID is unknown. Scan again.");
+        if(CalibrationOperation(kind,op))return HandleMouseCalibration(req,target,op);
         if(op=="read") return Read(target,req);
         if(op=="set") {
             object flag; if (!req.TryGetValue("experimental",out flag)||!(flag is bool)||(bool)flag!=true) throw new ArgumentException("Experimental device control must be explicitly enabled.");
@@ -74,7 +76,7 @@ internal static partial class GearLinkWorker
             object noOp; if(req.TryGetValue("requireNoOp",out noOp)&&noOp is bool&&(bool)noOp)throw new ArgumentException("Read-only no-op validation rejected a changed value; no setting was written.");
             SettingReceipt receipt;using(var hid=new GearHid(target))receipt=hid.WriteSetting(target.SelectReport(kind=="headset"?(byte?)0xCC:null),packet);
             var after=Read(target,req);after["setting"]=setting;after["requestedValue"]=value;after["accepted"]=true;after["writeAttempted"]=true;
-            bool match=MatchesSetting(setting,value,(Dictionary<string,object>)after["snapshot"]);
+            bool match=setting=="mouseLighting"?MatchesMouseLighting(value,(Dictionary<string,object>)before["snapshot"],(Dictionary<string,object>)after["snapshot"]):MouseSensorSetting(setting)?MatchesMouseSensorAfter(setting,value,(Dictionary<string,object>)before["snapshot"],(Dictionary<string,object>)after["snapshot"]):MatchesSetting(setting,value,(Dictionary<string,object>)after["snapshot"]);
             after["accepted"]=receipt.OutputCompleted;after["settingAcknowledged"]=receipt.Acknowledged;after["settingRejected"]=receipt.Rejected;if(receipt.Warning!=null)((List<object>)after["errors"]).Add(Obj("field","settingAcknowledgement","message",receipt.Warning));
             after["writeConfirmed"]=receipt.OutputCompleted&&!receipt.Rejected&&(bool)after["online"]&&match;after["acceptanceEvidence"]="HID output completion, matching acknowledgement, and current-value readback are separate results.";
             after["appliedState"]=(bool)after["writeConfirmed"]?"confirmed":"unconfirmed";
@@ -265,7 +267,7 @@ internal sealed class GearHid : IDisposable
     {
         string kind=GearLinkWorker.Kind(descriptor.Pid);bool allow=kind=="headset"&&report==0xCC&&packet.Length>=5&&packet[2]==0&&packet[3]==0&&(packet[0]==0x41&&new byte[]{2,3,4,10,16,17}.Contains(packet[1])||packet[0]==0x51&&new byte[]{16,40,51,55,82}.Contains(packet[1])||packet[0]==0x61&&packet[1]==17);
         if((kind=="mouse"||kind=="keyboard")&&packet.Length>=5&&packet[0]==0x51&&packet[3]==0&&descriptor.OutputReports.Contains(report)){allow=kind=="mouse"?(packet[1]==49&&new byte[]{4,6,9,12,13,14,15,18}.Contains(packet[2])||packet[1]==55&&packet[2]==0):(packet[1]==49||packet[1]==56)&&packet[2]==0;}
-        if(descriptor.OutputReports.Contains(report)&&GearLinkWorker.IsFeatureWrite(kind,packet))allow=true;
+        if(descriptor.OutputReports.Contains(report)&&(GearLinkWorker.IsFeatureWrite(kind,packet)||kind=="mouse"&&GearLinkWorker.IsMouseSensorWrite(descriptor.Pid,packet)))allow=true;
         if(!allow)throw new ArgumentException("Setting transport rejected a nonallowlisted command.");
         if(descriptor.OutputLength<packet.Length+1)throw new IOException("Unexpected output report length.");
         return GearLinkWorker.SendSettingAndAwaitResponse(descriptor.Pid,report,packet,descriptor.OutputLength,descriptor.InputLength,(write,buffer,budget)=>Transfer(write,buffer,budget));

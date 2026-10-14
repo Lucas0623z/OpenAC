@@ -23,14 +23,7 @@ internal static partial class GearLinkWorker
     }
     internal static Dictionary<string,int> CreateMouseTargets()
     {
-        var result=new Dictionary<string,int>(StringComparer.Ordinal);
-        for(int i=0;i<26;i++)result.Add("Key"+(char)('A'+i),4+i);
-        for(int i=1;i<=9;i++)result.Add("Digit"+i,29+i);result.Add("Digit0",39);
-        string[] names={"Enter","Escape","Backspace","Tab","Space","ArrowRight","ArrowLeft","ArrowDown","ArrowUp","LeftCtrl","LeftShift","LeftAlt","LeftWin","RightCtrl","RightShift","RightAlt","RightWin","MultimediaPlayPause","MultimediaStop","MultimediaPrevTrack","MultimediaNextTrack","MultimediaMute","MultimediaVolumeDown","MultimediaVolumeUp","MouseProfile","MouseDoubleClick","MouseLeftBackward","MouseLeftForward","MouseDPISwitch","MouseTargetFocus","MouseScrollUp","MouseScrollDown","MouseClickLeft","MouseClickRight","MouseClickMiddle","MouseDpiUp","MouseDpiDown","KeyDisabled","ShiftMode"};
-        int[] codes={40,41,42,43,44,79,80,81,82,224,225,226,227,228,229,230,231,240,241,242,243,244,245,246,480,483,484,485,486,487,488,489,496,497,498,499,500,511,253};
-        for(int i=0;i<names.Length;i++)result.Add(names[i],codes[i]);
-        for(int i=1;i<=12;i++)result.Add("F"+i,57+i);
-        return result;
+        return RogControl.MouseButtonActionFacts.SimpleTargetMap();
     }
     internal static int[] KeyboardPollingRates(int modelPid) { return modelPid==7586||modelPid==7588?new int[]{1000,8000}:new int[0]; }
     internal static object FeatureOptions(string kind,int modelPid=0)
@@ -46,6 +39,8 @@ internal static partial class GearLinkWorker
             QueryField(hid,report,Packet(0x12,20,1),"zoneSettings",errors,b=>{snapshot["zoneSettings"]=ParseZone(b);caps.Add("zoneSettings");});
             QueryField(hid,report,Packet(0x12,5,0),"buttonBindings",errors,b=>{snapshot["buttonBindings"]=ParseMouseBindings(b);caps.Add("buttonBindings");});
             QueryField(hid,report,Packet(0x12,5,7),"shiftButtonBindings",errors,b=>{snapshot["shiftButtonBindings"]=ParseMouseBindings(b);caps.Add("shiftButtonBindings");});
+            ReadMouseSensorFeatures(hid,report,descriptor.Pid,snapshot,caps,errors);
+            snapshot["manualCalibrationWorkflowSupported"]=caps.Contains("mouseCalibrationInfo")&&caps.Contains("mouseCalibrationLOD");
             return;
         }
         QueryField(hid,report,Packet(0x23,0,0),"oledFirmware",errors,b=>{Require(b,8);string version=VersionNative4(b,4);if(version==null)throw new IOException("OLED firmware information is not ready.");snapshot["oledFirmware"]=version;caps.Add("oledFirmware");});
@@ -91,6 +86,8 @@ internal static partial class GearLinkWorker
         state["setCapabilities"]=setters.Distinct().ToArray();
         object softwareMode,windowsMode;if(online&&caps.Contains("lightingSoftwareMode")&&snapshot.TryGetValue("lightingSoftwareMode",out softwareMode)&&softwareMode is bool&&snapshot.TryGetValue("windowsLightingEnabled",out windowsMode)&&windowsMode is bool&&!(bool)windowsMode&&(kind=="keyboard"&&LegacyKeyboard(model)||kind=="mouse"&&(model==7546||model==7548)))state["setCapabilities"]=((string[])state["setCapabilities"]).Concat(new[]{"lightingSoftwareMode"}).ToArray();
         if(online&&PeripheralLightingReady(kind,model,snapshot)&&snapshot.ContainsKey("lightingSoftwareMode")&&snapshot["lightingSoftwareMode"] is bool&&!(bool)snapshot["lightingSoftwareMode"]&&caps.Contains("lighting"))state["setCapabilities"]=((string[])state["setCapabilities"]).Concat(new[]{"staticLighting"}).Distinct().ToArray();
+        if(kind=="mouse")AddMouseSensorSetCapabilities(online,model,state,snapshot,caps);
+        AddMouseLightingCapabilities(kind,online,state,snapshot,caps);
     }
     internal static Dictionary<string,object> ValueObject(object value,params string[] keys)
     {
@@ -99,6 +96,7 @@ internal static partial class GearLinkWorker
     internal static byte BooleanByte(object value){if(!(value is bool))throw new ArgumentException("Switch must be boolean.");return (bool)value?(byte)1:(byte)0;}
     internal static byte[] BuildFeatureSetting(string kind,string setting,object value,Dictionary<string,object> before)
     {
+        if(kind=="mouse"){object model;int pid=before.TryGetValue("modelPid",out model)&&model is int?(int)model:0;var sensor=BuildMouseSensorSetting(setting,value,before,pid);if(sensor!=null)return sensor;if(setting=="mouseLighting")return BuildMouseLighting(value,before);}
         if(setting=="lightingSoftwareMode")return BuildPeripheralLightingSoftwareMode(kind,value,before);
         if(setting=="staticLighting")return BuildPeripheralStaticLighting(kind,value,before);
         if(kind=="mouse"&&setting=="zoneSettings") {
@@ -107,7 +105,10 @@ internal static partial class GearLinkWorker
             return Packet(0x51,68,1,BooleanByte(v["enabled"]),(byte)index,(byte)x,(byte)(x>>8),(byte)y,(byte)(y>>8),(byte)power);
         }
         if(kind=="mouse"&&setting=="buttonBinding") {
-            var v=ValueObject(value,"button","target","shift");string source=v["button"] as string;int index=Array.IndexOf(MouseButtons,source);if(index<0)throw new ArgumentException("Unknown physical mouse button.");bool shift=BooleanByte(v["shift"])==1;int code=KeyCode(MouseTargets,v["target"] as string);string field=shift?"shiftButtonBindings":"buttonBindings";var mappings=before.ContainsKey(field)?before[field] as Dictionary<string,object>:null;if(mappings==null||!mappings.ContainsKey(source))throw new ArgumentException("Current button mapping is unknown.");int button=MouseButtonCodes[index];return Packet(0x51,shift?(byte)35:(byte)33,0,(byte)button,(byte)(button>>8),(byte)code,(byte)(code>>8));
+            var v=ValueObject(value,"button","target","shift");object model;int pid=before.TryGetValue("modelPid",out model)&&model is int?(int)model:0;
+            string source=v["button"] as string,target=v["target"] as string;bool shift=BooleanByte(v["shift"])==1;byte[] packet;bool alreadySet;
+            if(!RogControl.MouseButtonActionFacts.TrySimplePacket(pid,before,source,target,shift,out packet,out alreadySet))throw new ArgumentException("The exact mouse model, complete binding bank and target constraints must be confirmed.");
+            if(alreadySet){int index=Array.IndexOf(MouseButtons,source),button=MouseButtonCodes[index],code=KeyCode(MouseTargets,target);return Packet(0x51,shift?(byte)35:(byte)33,0,(byte)button,(byte)(button>>8),(byte)code,(byte)(code>>8));}return packet;
         }
         if(kind!="keyboard")return null;
         if(setting=="oledEnabled"||setting=="oledKpsEnabled")return Packet(setting=="oledEnabled"?(byte)0x69:(byte)0x6B,0,0,BooleanByte(value));
@@ -128,6 +129,7 @@ internal static partial class GearLinkWorker
     }
     internal static bool IsFeatureWrite(string kind,byte[] packet)
     {
+        if(IsMouseLightingWrite(kind,packet))return true;
         if(IsPeripheralLightingWrite(kind,packet))return true;
         if(packet.Length<5||packet[3]!=0)return false;
         if(kind=="mouse")return packet[0]==0x51&&(packet[1]==68&&packet[2]==1&&packet.Length==11||(packet[1]==33||packet[1]==35)&&packet[2]==0&&packet.Length==8&&MouseButtonCodes.Contains(U16(packet,4))&&MouseTargets.Values.Contains(U16(packet,6)));
@@ -138,10 +140,12 @@ internal static partial class GearLinkWorker
     }
     internal static bool? MatchesFeatureSetting(string setting,object value,Dictionary<string,object> snapshot)
     {
+        var sensorMatch=MatchesMouseSensorSetting(setting,value,snapshot);if(sensorMatch.HasValue)return sensorMatch;
+        if(setting=="mouseLighting")return MatchesMouseLighting(value,snapshot,snapshot);
         if(setting=="staticLighting")return MatchesPeripheralStaticLighting(value,snapshot);
         object prior;
         if(setting=="zoneSettings"){if(!snapshot.TryGetValue(setting,out prior)||!(prior is Dictionary<string,object>)||!(value is Dictionary<string,object>))return false;var v=(Dictionary<string,object>)value;var p=(Dictionary<string,object>)prior;return new string[]{"enabled","pollingRate","dpi","dpiY","txPower"}.All(k=>p.ContainsKey(k)&&v.ContainsKey(k)&&Json.Serialize(p[k])==Json.Serialize(v[k]));}
-        if(setting=="buttonBinding"){var v=value as Dictionary<string,object>;if(v==null)return false;string field=(bool)v["shift"]?"shiftButtonBindings":"buttonBindings";if(!snapshot.TryGetValue(field,out prior)||!(prior is Dictionary<string,object>))return false;var p=(Dictionary<string,object>)prior;object binding;if(!p.TryGetValue(v["button"] as string,out binding)||!(binding is Dictionary<string,object>))return false;return (int)((Dictionary<string,object>)binding)["targetCode"]==KeyCode(MouseTargets,v["target"] as string);}
+        if(setting=="buttonBinding"){try{var v=ValueObject(value,"button","target","shift");return RogControl.MouseButtonActionFacts.MatchesSimple(snapshot,v["button"] as string,v["target"] as string,BooleanByte(v["shift"])==1)==true;}catch(ArgumentException){return false;}}
         if(setting=="oledModeEnabled"||setting=="leverModeEnabled"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue(setting=="oledModeEnabled"?"oledModeStates":"leverModeStates",out prior)||!(prior is bool[]))return false;var modes=(bool[])prior;int mode=Convert.ToInt32(v["mode"]);return mode>=0&&mode<modes.Length&&modes[mode]==(bool)v["enabled"];}
         if(setting=="oledBarItem"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue("oledBarInfo",out prior)||!(prior is Dictionary<string,object>))return false;var items=(Dictionary<string,object>)prior;object current;return items.TryGetValue(v["item"] as string,out current)&&current is bool&&(bool)current==(bool)v["enabled"];}
         if(setting=="keyBinding"){var v=value as Dictionary<string,object>;if(v==null||!snapshot.TryGetValue(setting,out prior)||!(prior is Dictionary<string,object>))return false;var p=(Dictionary<string,object>)prior;return Text(p,"source")==v["source"] as string&&(int)p["targetCode"]==KeyCode(KeyboardKeys,v["target"] as string);}
@@ -150,7 +154,7 @@ internal static partial class GearLinkWorker
     internal static void ExtendedSelfTest()
     {
         int tests=0;Action<bool> check=v=>{if(!v)throw new Exception("Extended synthetic protocol check failed.");tests++;};
-        var before=Obj("zoneSettings",Obj("enabled",false,"pollingRate",1000,"dpi",1600,"dpiY",800,"txPower",1),"buttonBindings",ParseMouseBindings(new byte[]{18,5,0,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"shiftButtonBindings",ParseMouseBindings(new byte[]{18,5,7,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"oledBarRaw",new int[]{61,128},"oledModeStates",new bool[]{true,false,false,false,true},"leverModeStates",new bool[]{true,true,true,true,true,false,false,true},"keyBinding",Obj("source","KeyA","targetCode",31));
+        var before=Obj("modelPid",7548,"zoneSettings",Obj("enabled",false,"pollingRate",1000,"dpi",1600,"dpiY",800,"txPower",1),"buttonBindings",ParseMouseBindings(new byte[]{18,5,0,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"shiftButtonBindings",ParseMouseBindings(new byte[]{18,5,7,0,240,1,241,1,242,1,228,1,229,1,230,1,232,1,233,1}),"oledBarRaw",new int[]{61,128},"oledModeStates",new bool[]{true,false,false,false,true},"leverModeStates",new bool[]{true,true,true,true,true,false,false,true},"keyBinding",Obj("source","KeyA","targetCode",31));
         var zone=Obj("enabled",true,"pollingRate",8000,"dpi",1600,"dpiY",800,"txPower",1);
         check(BuildFeatureSetting("mouse","zoneSettings",zone,before).SequenceEqual(new byte[]{81,68,1,0,1,6,63,6,31,3,1}));
         var parsed=ParseZone(new byte[]{18,20,1,0,1,6,63,6,31,3,1});before["zoneSettings"]=parsed;check(MatchesFeatureSetting("zoneSettings",zone,before)==true);zone["dpiY"]=801;check(MatchesFeatureSetting("zoneSettings",zone,before)==false);

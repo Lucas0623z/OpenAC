@@ -58,30 +58,35 @@ namespace RogControl {
   }
   public Task<Reply> Request(Dictionary<string,object> request) {return Request<Reply>(request);}
   public Task<T> Request<T>(Dictionary<string,object> request) {return Request<T>(request,null);}
-  public async Task<T> Request<T>(Dictionary<string,object> request,object expectedSession) {
-   await gate.WaitAsync();
+  public Task<T> Request<T>(Dictionary<string,object> request,object expectedSession) {return Request<T>(request,expectedSession,timeout);}
+  public async Task<T> Request<T>(Dictionary<string,object> request,object expectedSession,int budgetMs) {
+   if(budgetMs<1||budgetMs>timeout)throw new ArgumentOutOfRangeException("budgetMs");var requestClock=Stopwatch.StartNew();
+   if(!await gate.WaitAsync(budgetMs))throw new System.TimeoutException("设备请求排队超时，没有发送设置。");
    try {
     if(disposed)throw new ObjectDisposedException("设备接口已关闭");
     if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已失效，请重新读取后应用。");
+    if(requestClock.ElapsedMilliseconds>=budgetMs)throw new System.TimeoutException("设备请求排队超时，没有发送设置。");
     Start();
     if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已改变，请重新读取后应用。");
+    if(requestClock.ElapsedMilliseconds>=budgetMs){Kill();throw new System.TimeoutException("设备启动超时，没有发送设置。");}
     int id=++nextId;request["id"]=id;var json=new JavaScriptSerializer();
     // The Framework writer inherits the parent's console encoding and may
     // prepend a BOM. JSON-lines workers need a predictable UTF-8 frame.
     byte[] frame=new UTF8Encoding(false).GetBytes(json.Serialize(request)+"\n");var input=process.StandardInput.BaseStream;input.Write(frame,0,frame.Length);input.Flush();
     return await Task.Run(()=>{
-     Stopwatch clock=Stopwatch.StartNew();string line;
-     while(clock.ElapsedMilliseconds<timeout){
-      if(lines.TryTake(out line,250)) {
+     Stopwatch clock=requestClock;string line;
+     while(clock.ElapsedMilliseconds<budgetMs){
+      if(lines.TryTake(out line,Math.Max(1,Math.Min(250,budgetMs-(int)clock.ElapsedMilliseconds)))) {
        Dictionary<string,object> result;try{result=json.Deserialize<Dictionary<string,object>>(line);}catch{continue;}
        if(result!=null&&result.ContainsKey("id")&&Convert.ToInt32(result["id"])==id)return json.Deserialize<T>(line);
       }
       if(process.HasExited)throw new InvalidOperationException("硬件工作进程已退出。错误码 0x"+unchecked((uint)process.ExitCode).ToString("X8")+"。本次请求未成功，界面可继续操作。");
      }
-     Kill();throw new System.TimeoutException("设备接口超时（"+(timeout/1000.0).ToString("0.##")+" 秒）。已结束工作进程，界面可继续操作。硬件设置可能保留最后一次应用的状态。");
+     Kill();throw new System.TimeoutException("设备接口超时（"+(budgetMs/1000.0).ToString("0.##")+" 秒）。已结束工作进程，界面可继续操作。硬件设置可能保留最后一次应用的状态。");
     });
    } finally {gate.Release();}
   }
+  public static void ObserveFailure(Task pending){pending.ContinueWith(t=>{var observed=t.Exception;},TaskContinuationOptions.OnlyOnFaulted);}
   public void Kill() { sessionIdentity=null;try{if(Running)process.Kill();}catch{} try{if(process!=null)process.Dispose();}catch{} process=null; }
   public void Dispose() {disposed=true;Kill();}
  }
@@ -160,8 +165,8 @@ namespace RogControl {
    var main=new Grid{Margin=new Thickness(22,18,22,8)};main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});main.RowDefinitions.Add(new RowDefinition());main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});Grid.SetColumn(main,1);root.Children.Add(main);
    fixedPageHeader=new StackPanel();main.Children.Add(fixedPageHeader);content=new StackPanel();pageScroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled};Grid.SetRow(pageScroll,1);main.Children.Add(pageScroll);
    status=Label("就绪",11,muted);status.TextWrapping=TextWrapping.Wrap;status.MaxHeight=42;status.Margin=new Thickness(0,14,0,0);Grid.SetRow(status,2);main.Children.Add(status);Content=root;BeginOriginalPixelLayout();
-   Closing+=async(s,e)=>{if(closing){e.Cancel=!closeReady;return;}e.Cancel=true;closing=true;if(monitorTimer!=null)monitorTimer.Stop();if(windowsBatteryTimer!=null)windowsBatteryTimer.Stop();if(pageReadTimer!=null)pageReadTimer.Stop();if(previewStateTimer!=null)previewStateTimer.Stop();status.Text="正在结束设备连接与宏…";try{await WaitWindowsToolsAsync();await DisposeNotebookStatusAsync();await StopAllAuraTargetsAsync();await DisposeMonitoringAsync();await StopMacroFeaturesAsync();await StopScenarioFeaturesAsync();gearWorker.Dispose();storageWorker.Dispose();DisposeOriginalWindowsAudio();DisposeOriginalDiscovery();foreach(var sdk in sdkWorkers.Values)sdk.Dispose();worker.Dispose();}finally{FinishWindowClose();}};
-   BeginMonitoring();BeginWindowsBatteryPolling();BeginNotebookStateExpiry();BeginPageReads();BeginPreviewSnapshots();ShowPage(ResolveUiStartupPage());if(!render&&!previewReload)Loaded+=async(s,e)=>{await RefreshInventory();if(closing)return;await ScanAura();};
+   Closing+=async(s,e)=>{if(closing){e.Cancel=!closeReady;return;}e.Cancel=true;closing=true;if(monitorTimer!=null)monitorTimer.Stop();if(windowsBatteryTimer!=null)windowsBatteryTimer.Stop();if(pageReadTimer!=null)pageReadTimer.Stop();if(previewStateTimer!=null)previewStateTimer.Stop();status.Text="正在结束设备连接与宏…";try{await WaitMouseCalibrationWorkflow();await WaitDeviceHotplugAsync();await WaitWindowsToolsAsync();await DisposeNotebookStatusAsync();await StopAllAuraTargetsAsync();await DisposeMonitoringAsync();await StopMacroFeaturesAsync();await StopScenarioFeaturesAsync();gearWorker.Dispose();storageWorker.Dispose();DisposeOriginalWindowsAudio();DisposeOriginalDiscovery();foreach(var sdk in sdkWorkers.Values)sdk.Dispose();worker.Dispose();}finally{FinishWindowClose();}};
+   BeginDeviceHotplugMonitoring();BeginMouseCalibrationInput();BeginMonitoring();BeginWindowsBatteryPolling();BeginNotebookStateExpiry();BeginPageReads();BeginPreviewSnapshots();ShowPage(ResolveUiStartupPage());if(!render&&!previewReload)Loaded+=async(s,e)=>{await RefreshInventory();if(closing)return;await ScanAura();};
   }
   [System.Runtime.InteropServices.DllImport("dwmapi.dll")]static extern int DwmSetWindowAttribute(IntPtr window,int attribute,ref int value,int size);
   static Brush Brush(string hex){var brush=(Brush)new BrushConverter().ConvertFromString(hex);return brush.IsFrozen?brush.Clone():brush;}
@@ -182,7 +187,7 @@ namespace RogControl {
    if(fixedPageHeaderKey!=layoutKey){pageScroll.ScrollToTop();fixedPageHeaderKey=layoutKey;}
   }
   void FinishWindowClose(){closeReady=true;Dispatcher.BeginInvoke(new Action(Close));}
-  void ShowPage(string value){if(value=="设置")value="更新库";OnScenarioNavigation(value);OnMacroNavigation(value);if(page!=value)pageScroll.ScrollToTop();page=value;RememberUiPage(value);QueuePageRead(value);liveMonitorLabels.Clear();content.Children.Clear();fixedPageHeader.Children.Clear();UpdateOriginalNavigation();switch(value){case "控制面板":case "总览":OriginalDashboard();break;case "系统监控":OriginalSystemMonitoringPage();break;case "设备":OriginalDeviceGallery();break;case "灯效 & Aura Sync":case "神光同步":OriginalAuraPage();break;case "更新库":OriginalSettingsPage();break;case "情境设置档":OriginalScenarioPage();break;case "宏":OriginalMacroPage();break;case "游戏库":OriginalGameLibraryPage();break;case "GameFirst":OriginalGameFirstPage();break;case "工具":OriginalToolsPage();break;case "设备兼容":Header("设备兼容","");OriginalDiscoveryGallery(content);break;case "驱动程序更新":OriginalAsusDriverUpdatePage();break;case "Windows 电源":OriginalWindowsPowerPage();break;case "屏幕设置":OriginalWindowsDisplayPage();break;case "电池信息":OriginalWindowsBatteryPage();break;case "笔记本与掌机":OriginalNotebookPage();break;case "Fan Xpert":OriginalFanXpertPage();break;case "device:motherboard":OriginalMotherboardPage();break;case "device:fan":OriginalControllerPage();break;case "device:receiver":OriginalReceiverPage();break;case "device:gpu":OriginalGpuLightingPage();break;case "device:headset":OriginalGearDevicePage("headset");break;case "device:mouse":OriginalGearDevicePage("mouse");break;case "device:keyboard":OriginalGearDevicePage("keyboard");break;default:if(value.StartsWith("device:discovered:",StringComparison.Ordinal))OriginalDiscoveredDevicePage(value.Substring("device:discovered:".Length));else if(value.StartsWith("device:",StringComparison.Ordinal))OriginalUnknownDevice(value.Substring(7));else OriginalPendingPage(value);break;}}
+  void ShowPage(string value){if(value=="设置")value="更新库";OnMouseCalibrationNavigation(value);OnScenarioNavigation(value);OnMacroNavigation(value);if(page!=value)pageScroll.ScrollToTop();page=value;RememberUiPage(value);QueuePageRead(value);liveMonitorLabels.Clear();content.Children.Clear();fixedPageHeader.Children.Clear();UpdateOriginalNavigation();switch(value){case "控制面板":case "总览":OriginalDashboard();break;case "系统监控":OriginalSystemMonitoringPage();break;case "设备":OriginalDeviceGallery();break;case "灯效 & Aura Sync":case "神光同步":OriginalAuraPage();break;case "更新库":OriginalSettingsPage();break;case "情境设置档":OriginalScenarioPage();break;case "宏":OriginalMacroPage();break;case "游戏库":OriginalGameLibraryPage();break;case "GameFirst":OriginalGameFirstPage();break;case "工具":OriginalToolsPage();break;case "设备兼容":Header("设备兼容","");OriginalDiscoveryGallery(content);break;case "驱动程序更新":OriginalAsusDriverUpdatePage();break;case "Windows 电源":OriginalWindowsPowerPage();break;case "屏幕设置":OriginalWindowsDisplayPage();break;case "电池信息":OriginalWindowsBatteryPage();break;case "笔记本与掌机":OriginalNotebookPage();break;case "Fan Xpert":OriginalFanXpertPage();break;case "device:motherboard":OriginalMotherboardPage();break;case "device:fan":OriginalControllerPage();break;case "device:receiver":OriginalReceiverPage();break;case "device:gpu":OriginalGpuLightingPage();break;case "device:headset":OriginalGearDevicePage("headset");break;case "device:mouse":OriginalGearDevicePage("mouse");break;case "device:keyboard":OriginalGearDevicePage("keyboard");break;default:if(value.StartsWith("device:discovered:",StringComparison.Ordinal))OriginalDiscoveredDevicePage(value.Substring("device:discovered:".Length));else if(value.StartsWith("device:",StringComparison.Ordinal))OriginalUnknownDevice(value.Substring(7));else OriginalPendingPage(value);break;}}
   static IEnumerable<string> Flatten(object value,string prefix,int depth){
    if(depth>5||value==null)yield break;
    var map=value as IDictionary<string,object>;

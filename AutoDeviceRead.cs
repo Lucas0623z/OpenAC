@@ -14,7 +14,7 @@ namespace RogControl {
    if(render)return;
    pageReadTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(400)};
    pageReadTimer.Tick+=async(s,e)=>{
-    if(!IsLoaded||closing||busy||pageReadRunning||String.IsNullOrEmpty(pendingPageRead))return;
+    if(!IsLoaded||closing||busy||pageReadRunning||DeviceHotplugPageReadsPaused||String.IsNullOrEmpty(pendingPageRead))return;
     string target=pendingPageRead,key=PageReadKey(target);bool preserveDraft=pendingPageReadMayPreserveDraft;pendingPageRead="";if(key==null||preserveDraft&&PreserveVisiblePageReadDraft(target))return;
     DateTime attempted;if(pageReadAttempts.TryGetValue(key,out attempted)&&(DateTime.UtcNow-attempted).TotalSeconds<10)return;
     pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=true;
@@ -36,7 +36,7 @@ namespace RogControl {
    if(PreserveLcdMonitorReadDraft(target))return true;if(target!="device:mouse")return false;
    Dictionary<string,object> current;object readSession;if(!gearStates.TryGetValue("mouse",out current)||!CurrentGearReadSession("mouse",current,out readSession))return false;
    string tab;gearTabs.TryGetValue("mouse",out tab);
-   return tab=="按键"?MouseButtonsHasPendingDraft(current):tab=="灯光"?MouseLightingHasPendingDraft(current):tab=="Zone 模式"&&MouseZoneHasPendingDraft(current);
+   return tab=="按键"?MouseButtonsHasPendingDraft(current):tab=="灯光"?MouseLightingHasPendingDraft(current):tab=="校准"?MouseCalibrationHasPendingDraft(current):tab=="Zone 模式"&&MouseZoneHasPendingDraft(current);
   }
   string PageReadViewKey(string target) {
    string key=PageReadKey(target)??target;if(target=="device:mouse"||target=="device:keyboard"||target=="device:headset"){

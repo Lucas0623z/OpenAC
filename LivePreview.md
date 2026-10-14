@@ -77,7 +77,7 @@ monitor draft checks that same live process session inside the request queue;
 an expired session never silently restarts a worker to send the old IDs. The
 same-page rendering of an active monitor draft also pauses automatic rereads;
 returning to LCD from another view or losing the session permits a fresh read.
-Mouse buttons, static lighting and Zone editing now have data-only draft models.
+Mouse buttons, the five exact-model lighting effects, calibration and Zone/FPS editing now have data-only draft models.
 Their selection, color, independent X/Y values and calibration expansion states
 survive replacement. Restored observations cannot permit an apply until a fresh
 read replaces the old cache. All gear SET requests use the precise current
@@ -96,3 +96,5 @@ seen during the full regression run.
 
 The settings popup keeps single-field actions separate; its unimplemented aggregate
 Save, warning and sleeping-wallpaper controls remain disabled.
+
+Manual calibration is never resumed after replacement. The reload gate waits for its full transaction and restoration; closing cancels it and awaits cleanup before disposing the worker. USB/HID notification refresh also owns a tracked task. Device-change generations invalidate stale bindings and prevent late GET/SET responses from re-establishing them. Explicit per-request budgets include queue time, and a queue expiry transmits no frame. No timed-out request is abandoned behind a completed refresh task.
