@@ -241,7 +241,7 @@ namespace RogControlNotebook {
    if(args.Length!=0)return 2;
    var service=new NotebookService(NotebookNativeIdentity.Read,delegate{return new NotebookNativeTransport();},8000);
    var writer=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false)){AutoFlush=true};string line;
-   while((line=Console.ReadLine())!=null){writer.WriteLine(service.HandleLine(line));if(service.RestartRequired){writer.Flush();Environment.Exit(4);}}
+   while((line=OpenAc.WorkerTextProtocol.ReadLine())!=null){writer.WriteLine(service.HandleLine(line));if(service.RestartRequired){writer.Flush();Environment.Exit(4);}}
    return 0;
   }
  }

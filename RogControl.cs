@@ -65,7 +65,10 @@ namespace RogControl {
     if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已失效，请重新读取后应用。");
     Start();
     if(expectedSession!=null&&!Object.ReferenceEquals(SessionIdentity,expectedSession))throw new InvalidOperationException("设备读取会话已改变，请重新读取后应用。");
-    int id=++nextId;request["id"]=id;var json=new JavaScriptSerializer();process.StandardInput.WriteLine(json.Serialize(request));process.StandardInput.Flush();
+    int id=++nextId;request["id"]=id;var json=new JavaScriptSerializer();
+    // The Framework writer inherits the parent's console encoding and may
+    // prepend a BOM. JSON-lines workers need a predictable UTF-8 frame.
+    byte[] frame=new UTF8Encoding(false).GetBytes(json.Serialize(request)+"\n");var input=process.StandardInput.BaseStream;input.Write(frame,0,frame.Length);input.Flush();
     return await Task.Run(()=>{
      Stopwatch clock=Stopwatch.StartNew();string line;
      while(clock.ElapsedMilliseconds<timeout){

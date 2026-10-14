@@ -13,6 +13,7 @@ class SupervisorTests {
    Check(worker.SessionIdentity==null&&!worker.Running,"Unstarted client has no native session.");
    var denied=new Dictionary<string,object>{{"op","scan"}};Check(await SessionRejected(worker,new object(),denied)&&!worker.Running&&!denied.ContainsKey("id"),"Bounded request cannot start an absent session.");
    var reply=await worker.Request(new Dictionary<string,object>{{"op","scan"}});Check(reply.ok&&reply.id==1,"Wrong reply correlation or native output noise not isolated.");
+   var consoleEncoding=Console.InputEncoding;try{Console.InputEncoding=new System.Text.UTF8Encoding(true);using(var framing=new WorkerClient(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"MockWorker.exe"),1500)){var unicode=await framing.Request<Dictionary<string,object>>(new Dictionary<string,object>{{"op","scan"},{"text","键鼠灯光"}});Check(Convert.ToString(unicode["echo"])=="键鼠灯光","First JSON frame preserves UTF-8 despite a Framework startup BOM.");}}finally{Console.InputEncoding=consoleEncoding;}
    object first=worker.SessionIdentity;Check(first!=null,"Successful mock startup creates a session identity.");
    reply=await worker.Request<Reply>(new Dictionary<string,object>{{"op","scan"}},first);Check(reply.ok&&Object.ReferenceEquals(first,worker.SessionIdentity),"Valid bounded request remains in the same process session.");
    bool exited=false;try{await worker.Request(new Dictionary<string,object>{{"op","exit"}});}catch(InvalidOperationException){exited=true;}Check(exited,"Native exit not reported.");

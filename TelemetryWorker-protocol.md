@@ -49,8 +49,8 @@ Compile worker using Framework x86 csc with `System.Web.Extensions.dll`; compile
 Example commands (output goes outside the public source):
 
 ```powershell
-& "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /platform:x86 /target:exe /r:System.Web.Extensions.dll /out:..\..\validation\TelemetryWorker.exe TelemetryWorker.cs
-& "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /platform:x86 /target:exe /r:System.Web.Extensions.dll /main:TelemetryWorkerTests /out:..\..\validation\TelemetryWorkerTests.exe TelemetryWorker.cs TelemetryWorkerTests.cs
+& "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /platform:x86 /target:exe /r:System.Web.Extensions.dll /out:..\..\validation\TelemetryWorker.exe TelemetryWorker.cs WorkerTextProtocol.cs
+& "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /platform:x86 /target:exe /r:System.Web.Extensions.dll /main:TelemetryWorkerTests /out:..\..\validation\TelemetryWorkerTests.exe TelemetryWorker.cs WorkerTextProtocol.cs TelemetryWorkerTests.cs
 & ..\..\validation\TelemetryWorkerTests.exe
 ```
 

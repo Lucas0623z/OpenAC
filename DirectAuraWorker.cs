@@ -41,7 +41,7 @@ internal sealed class DirectAuraWorker : IDisposable
     internal int Run()
     {
         string line;
-        while (!stop && (line = Console.ReadLine()) != null)
+        while (!stop && (line = OpenAc.WorkerTextProtocol.ReadLine()) != null)
         {
             object id = null;
             Dictionary<string, object> result = new Dictionary<string, object>();

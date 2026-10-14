@@ -12,6 +12,7 @@ namespace RogControl {
  public partial class MainWindow {
   readonly WorkerClient gearWorker=new WorkerClient(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"GearLinkWorker.exe"),18000);
   readonly Dictionary<string,Dictionary<string,object>> gearStates=new Dictionary<string,Dictionary<string,object>>();
+  readonly Dictionary<string,object> gearReadSessions=new Dictionary<string,object>();
   readonly Dictionary<string,string> gearTabs=new Dictionary<string,string>();
   string gearMessage="";
   string headsetAudioTab="均衡器";
@@ -27,6 +28,10 @@ namespace RogControl {
    string deviceStatus=state==null?(busy?"正在加载…":gearMessage.IndexOf("失败",StringComparison.Ordinal)>=0||gearMessage.IndexOf("未完成",StringComparison.Ordinal)>=0?"加载失败":""):GearOnline(state)?"":"设备未连接";
    if(deviceStatus.Length>0){status.Text=deviceStatus;status.ToolTip=gearMessage;}
    if(current=="性能"&&kind=="mouse"){OriginalMousePerformancePage(content,state);return;}
+   if(current=="按键"&&kind=="mouse"){OriginalMouseButtonsPage(content,state);return;}
+   if(current=="灯光"&&kind=="mouse"){OriginalMouseLightingPage(content,state);return;}
+   if(current=="校准"&&kind=="mouse"){OriginalMouseCalibrationPage(content,state);return;}
+   if(current=="Zone 模式"&&kind=="mouse"){OriginalMouseZonePage(content,state);return;}
    if(current=="按键"&&kind=="keyboard"){OriginalKeyboardKeysPage(content,state);return;}
    if(current=="拨杆"&&kind=="keyboard"){OriginalKeyboardLeverPage(content,state);return;}
    if(current=="OLED"&&kind=="keyboard"){OriginalKeyboardOledPage(content,state);return;}
@@ -61,7 +66,6 @@ namespace RogControl {
     if(kind!="mouse")AddGearFlag(right,kind,state,"lightingEnabled","灯光");if(kind=="headset"){AddGearFlag(right,kind,state,"auraEnabled","神光同步");AddGearMappedChoice(right,kind,state,"lightingEffect","灯效",new[]{"恒亮","呼吸","闪烁","彩色循环","彩虹"},new[]{1,2,3,4,5},"lightingEffectCode");string[] levels=Enumerable.Range(0,21).Select(v=>(v*5).ToString(CultureInfo.InvariantCulture)).ToArray();AddGearChoice(right,kind,state,"brightness","亮度（%）",levels,"brightnessRaw");if(OriginalStateFlag(snapshot,"lightingModeMappingUnconfirmed")==true)right.Children.Add(Paragraph("灯效设置不可用",12,muted));}else{AddGearTextMappedChoice(right,kind,state,"lightingEffect","灯效",kind=="mouse"?new[]{"恒亮","呼吸","彩色循环"}:new[]{"恒亮","呼吸","彩色循环","彩虹"},kind=="mouse"?new[]{"static","breathe","cycle"}:new[]{"static","breathe","cycle","rainbow"});AddGearNumber(right,kind,state,"lightingBrightness","LED 亮度",0,100);}
     var rgb=GearArray(snapshot,kind=="headset"?"color":"lightingColor");string hex=rgb!=null&&rgb.Length==3?"#"+String.Join("",rgb.Select(v=>Convert.ToInt32(v,CultureInfo.InvariantCulture).ToString("X2",CultureInfo.InvariantCulture))):"";var input=FeatureText(hex);right.Children.Add(FeatureField("颜色",input));var apply=Button("应用",async()=>{if(!System.Text.RegularExpressions.Regex.IsMatch(input.Text,"^#[0-9a-fA-F]{6}$")){Log("请输入 #RRGGBB 格式的颜色。");return;}var values=new int[3];for(int i=0;i<3;i++)values[i]=Int32.Parse(input.Text.Substring(1+i*2,2),NumberStyles.HexNumber,CultureInfo.InvariantCulture);await SetGearSetting(kind,state,"lightingColor",values);});apply.IsEnabled=CanApplyGear(state,"lightingColor");right.Children.Add(apply);return;
    }
-   if(current=="校准"&&kind=="mouse") {AddGearChoice(right,kind,state,"liftOffDistance","抬升高度",new[]{"0","1","2"});AddGearFlag(right,kind,state,"trackOnGlass","玻璃表面追踪");AddGearNumber(right,kind,state,"asymmetricCutoff","非对称抬升高度",1,11);return;}
    if(current=="OLED"&&kind=="keyboard") {OriginalGearOled(right,state);return;}
    if(current=="拨杆"&&kind=="keyboard") {OriginalGearLever(right,state);return;}
    if(current=="Zone 模式") {OriginalGearZone(right,state);return;}
@@ -78,13 +82,19 @@ namespace RogControl {
    if(busy||closing||render)return;busy=true;status.Text="正在读取设备 USB 设置…";
    try {var scan=await gearWorker.Request<SdkReply>(new Dictionary<string,object>{{"op","scan"},{"kind",kind}});if(!scan.ok)throw new InvalidOperationException(SdkError(scan.error));var found=GearArray(scan.data,"devices");
     var device=found==null?null:found.Cast<Dictionary<string,object>>().OrderByDescending(d=>GearOnline(d)).FirstOrDefault();if(device==null)throw new InvalidOperationException("未找到此型号的 USB 控制接口。请使用有线或 2.4GHz 连接。");
-    var reply=await gearWorker.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",OriginalStateText(device,"deviceId","")}});if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));if(reply.data==null)throw new InvalidOperationException("设备没有返回有效数据。");reply.data["capturedAt"]=DateTime.Now.ToString("HH:mm:ss");gearStates[kind]=reply.data;gearMessage=GearOnline(reply.data)?"设备设置已读回。":"USB 接收器已连接，设备当前未在线。";Log(gearMessage);
-   }catch(Exception ex){gearStates.Remove(kind);gearMessage=ex.Message;Log("读取失败："+ex.Message);}finally{busy=false;if(!closing)ShowPage(page);}
+    object readSession=gearWorker.SessionIdentity;if(readSession==null)throw new InvalidOperationException("设备读取会话已结束，请重新读取。");
+    var reply=await gearWorker.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",OriginalStateText(device,"deviceId","")}},readSession);if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));if(reply.data==null||!Object.ReferenceEquals(readSession,gearWorker.SessionIdentity))throw new InvalidOperationException("设备没有返回当前会话的有效数据。");reply.data["capturedAt"]=DateTime.Now.ToString("HH:mm:ss");gearStates[kind]=reply.data;gearReadSessions[kind]=readSession;gearMessage=GearOnline(reply.data)?"":"USB 接收器已连接，设备当前未在线。";if(gearMessage.Length>0)Log(gearMessage);else status.Text="";
+   }catch(Exception ex){gearStates.Remove(kind);gearReadSessions.Remove(kind);gearMessage=ex.Message;Log("读取失败："+ex.Message);}finally{busy=false;if(!closing)ShowPage(page);}
+  }
+  bool CurrentGearReadSession(string kind,Dictionary<string,object> state,out object readSession) {
+   readSession=null;Dictionary<string,object> current;object bound;
+   if(String.IsNullOrEmpty(kind)||state==null||!gearStates.TryGetValue(kind,out current)||!Object.ReferenceEquals(current,state)||!gearReadSessions.TryGetValue(kind,out bound)||bound==null||!Object.ReferenceEquals(bound,gearWorker.SessionIdentity))return false;
+   readSession=bound;return true;
   }
   async Task SetGearSetting(string kind,Dictionary<string,object> state,string setting,object value) {
-   if(busy||closing||render)return;if(!PermitHardwareWrite())return;if(!GearCanSet(state,setting)){Log("该设置尚未通过此型号的接口核对。");return;}busy=true;status.Text="正在应用设备设置…";
-    try {var reply=await gearWorker.Request<SdkReply>(new Dictionary<string,object>{{"op","set"},{"kind",kind},{"deviceId",OriginalStateText(state,"deviceId","")},{"setting",setting},{"value",value},{"experimental",true}});if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));if(reply.data!=null&&GearMap(reply.data,"snapshot")!=null){reply.data["capturedAt"]=DateTime.Now.ToString("HH:mm:ss");gearStates[kind]=reply.data;}Log(OriginalStateText(reply.data,"appliedState","")=="alreadySet"?"设备已是此设置，未重复发送。":OriginalStateFlag(reply.data,"writeConfirmed")==true?"设置已应用并读回确认。":"命令已发送；设备尚未确认设置读回。");}
-   catch(Exception ex){gearStates.Remove(kind);gearMessage="应用未完成，当前设备状态需要重新读取："+ex.Message;Log(gearMessage);}finally{busy=false;if(!closing)ShowPage(page);}
+   if(busy||closing||render)return;if(!PermitHardwareWrite())return;if(!GearCanSet(state,setting)){Log("该设置尚未通过此型号的接口核对。");return;}object readSession;if(!CurrentGearReadSession(kind,state,out readSession)){Log("设备读取会话已失效，请重新读取后应用。");return;}busy=true;status.Text="正在应用设备设置…";
+    try {var reply=await gearWorker.Request<SdkReply>(new Dictionary<string,object>{{"op","set"},{"kind",kind},{"deviceId",OriginalStateText(state,"deviceId","")},{"setting",setting},{"value",value},{"experimental",true}},readSession);if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));if(reply.data!=null&&GearMap(reply.data,"snapshot")!=null&&Object.ReferenceEquals(readSession,gearWorker.SessionIdentity)){reply.data["capturedAt"]=DateTime.Now.ToString("HH:mm:ss");gearStates[kind]=reply.data;gearReadSessions[kind]=readSession;}else{gearStates.Remove(kind);gearReadSessions.Remove(kind);}Log(OriginalStateText(reply.data,"appliedState","")=="alreadySet"?"设备已是此设置，未重复发送。":OriginalStateFlag(reply.data,"writeConfirmed")==true?"设置已应用并读回确认。":"命令已发送；设备尚未确认设置读回。");}
+   catch(Exception ex){gearStates.Remove(kind);gearReadSessions.Remove(kind);gearMessage="应用未完成，当前设备状态需要重新读取："+ex.Message;Log(gearMessage);}finally{busy=false;if(!closing)ShowPage(page);}
   }
   void AddGearChoice(StackPanel target,string kind,Dictionary<string,object> state,string setting,string title,string[] options,string getter=null) {
    var snapshot=GearMap(state,"snapshot");var box=FeatureCombo(new[]{"—"}.Concat(options),OriginalStateText(snapshot,getter??setting,"—"));var row=new Grid{Margin=new Thickness(0,0,0,18)};row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});row.Children.Add(FeatureField(title,box));

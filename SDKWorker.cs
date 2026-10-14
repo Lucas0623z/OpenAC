@@ -762,7 +762,7 @@ internal static class SDKWorker
         SetStdHandle(-11,GetStdHandle(-12)); Console.SetOut(Console.Error);
         SetErrorMode(0x8007);
         string line;
-        while((line=Console.ReadLine())!=null) {
+        while((line=OpenAc.WorkerTextProtocol.ReadLine())!=null) {
             Protocol.WriteLine(HandleLine(line));
         }
         return 0;

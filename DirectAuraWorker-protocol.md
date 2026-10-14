@@ -40,7 +40,7 @@ Ownership is acquired with `WaitOne(0)` and held for the opened interface's life
 Compile from the repository root with Windows PowerShell:
 
 ```powershell
-& 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:exe /platform:x64 '/out:work\rog-control\DirectAuraWorker.exe' /r:System.Web.Extensions.dll 'work\rog-control\DirectAuraWorker.cs'
+& 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:exe /platform:x64 '/out:work\rog-control\DirectAuraWorker.exe' /r:System.Web.Extensions.dll 'work\rog-control\DirectAuraWorker.cs' 'work\rog-control\WorkerTextProtocol.cs'
 & 'work\rog-control\DirectAuraWorker.exe' --self-test
 ```
 

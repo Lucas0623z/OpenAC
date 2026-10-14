@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-10-13",
+  "reviewedAt": "2026-10-14",
   "status": "reviewed_development_branch_allowlist",
   "publicationAuthorized": true,
   "projectLicenseSelection": "MIT",
@@ -77,7 +77,11 @@
     "KeyboardLightingStructure.cs",
     "HeadsetAudioStructure.cs",
     "GameFirstStructure.cs",
-    "GpuLightingStructure.cs"
+    "GpuLightingStructure.cs",
+    "MouseButtonsStructure.cs",
+    "MouseLightingStructure.cs",
+    "MouseCalibrationZoneStructure.cs",
+    "WorkerTextProtocol.cs"
   ],
   "buildFiles": [
     "app.manifest",
@@ -136,7 +140,12 @@
     "ReceiverGuiTests.cs",
     "ScenarioGuiTests.cs",
     "GameFirstGuiTests.cs",
-    "MacroGuiTests.cs"
+    "MacroGuiTests.cs",
+    "checks/MouseButtonsChecks.cs",
+    "checks/MouseLightingChecks.cs",
+    "checks/MouseCalibrationZoneChecks.cs",
+    "checks/MousePageLifecycleChecks.cs",
+    "WorkerTextProtocolTests.cs"
   ],
   "documentationFiles": [
     "README.md",
@@ -223,10 +232,11 @@
     "Mobile SCI preparation covers seven exact models without mobile hardware verification; battery WMI provider not physically tested on this desktop"
   ],
   "completedChecks": [
-    "Development core and GUI: 14871 synthetic checks passed with all workers and test sources rebuilt; no real setting writes or shown test windows",
-    "UI: real installed Armoury Crate window reviewed on the current 150% DPI desktop; 1180/1538/2560 hidden layouts checked where supported, with remaining blocked pages recorded in OriginalUiInventory.md",
+    "Development core and GUI: 17613 synthetic checks in 53 suites passed with all workers and test sources rebuilt; no real setting writes or shown test windows",
+    "UI: actual installed Armoury Crate and mouse buttons/lighting/calibration/Zone reviewed on the 150% DPI desktop; 1180/1538/2560 hidden layouts checked where supported; remaining views and controls recorded in OriginalUiInventory.md",
     "Live preview: seven staged workers, physical-size and data-only restoration, default-off writes, guarded active operations, startup/DPI transition snapshots and compiler-failure preservation",
     "Real read-only: earlier Windows/NVIDIA telemetry, power and displays; approved bounded fan COM probe enumerated eight headers and five profiles without setters, without proving RPM or duty units",
-    "Unsigned local candidate only; public v0.3.0-preview Release unchanged; no real install/uninstall"
+    "Unsigned local candidate only; public v0.3.0-preview Release unchanged; no real install/uninstall",
+    "Worker transport: strict UTF-8 framing and five known startup preambles checked with pure streams and mock processes; no global console encoding changes or Framework private-field reflection"
   ]
 }

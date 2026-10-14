@@ -41,6 +41,11 @@ namespace RogControl {
   public uint? WindowsPowerDraftAc,WindowsPowerDraftDc;
   public Dictionary<string,uint> WindowsDisplayDraft;
   public MousePerformanceDraft MousePerformanceDraft;
+  public MouseButtonsDraft MouseButtonsDraft;
+  public MouseLightingDraft MouseLightingDraft;
+  public MouseZoneDraft MouseZoneDraft;
+  public bool MouseCalibrationAutoExpanded,MouseCalibrationCustomExpanded,MouseZoneYExpanded;
+  public bool MouseZoneExpanded=true;
   public KeyboardViewsDraft KeyboardViewsDraft;
   public Dictionary<string,GearPowerFieldDraft> GearPowerDrafts;
   public GearPowerVoiceDraft GearPowerVoiceDraft;public bool GearPowerVoiceExpanded;
@@ -63,7 +68,7 @@ namespace RogControl {
     try{string directory=System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".preview");string path=System.IO.Path.Combine(directory,"resume.json"),temporary=path+".new";System.IO.File.WriteAllText(temporary,CapturePreviewState(),new System.Text.UTF8Encoding(false));if(System.IO.File.Exists(path))System.IO.File.Replace(temporary,path,null);else System.IO.File.Move(temporary,path);}catch{}
    };previewStateTimer.Start();
   }
-  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&NotebookCanPreviewReload&&!mousePerformanceApplying&&!keyboardViewsApplying&&!monitorBusy&&!controlling&&!AuraSyncBusy&&!AuraSyncConnectionsActive&&!windowsSystemWriting&&windowsPowerUndo==null&&windowsDisplayUndo==null&&(windowsSystemTask==null||windowsSystemTask.IsCompleted)&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
+  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&NotebookCanPreviewReload&&!mousePerformanceApplying&&MouseButtonsCanPreviewReload&&!mouseLightingApplying&&!mouseZoneApplying&&!keyboardViewsApplying&&!monitorBusy&&!controlling&&!AuraSyncBusy&&!AuraSyncConnectionsActive&&!windowsSystemWriting&&windowsPowerUndo==null&&windowsDisplayUndo==null&&(windowsSystemTask==null||windowsSystemTask.IsCompleted)&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
   [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="IsWindowEnabled")][return:System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]static extern bool PreviewWindowEnabled(IntPtr handle);
   public string PreviewPage {get{return page;}}
   public bool PreviewHardwareWritesEnabled {get{return HardwareWritesEnabled||experimentalLighting;}}
@@ -82,7 +87,7 @@ namespace RogControl {
     History=history.ToArray(),UpdateResult=openAcUpdate,UpdateMessage=openAcUpdateMessage,PageReadAttempts=pageReadAttempts,FirmwareCatalogs=firmwareCatalogs,FirmwareMessages=firmwareMessages,
     AsusCatalog=asusCatalog,AsusCatalogOsId=asusCatalogOsId,AsusCatalogMessage=asusCatalogMessage,
     AuraSyncTargets=auraSyncTargets,AuraSyncSelected=new List<string>(auraSyncSelected).ToArray(),AuraSyncResult=auraSyncResult,AuraOwnershipResults=auraOwnershipResults,AuraSyncMessage=auraSyncMessage,
-    WindowsPowerDraftScheme=windowsPowerDraftScheme,WindowsPowerDraftAc=windowsPowerDraftAc,WindowsPowerDraftDc=windowsPowerDraftDc,WindowsDisplayDraft=windowsDisplayDraft,MousePerformanceDraft=mousePerformanceDraft,KeyboardViewsDraft=keyboardViewsDraft,GearPowerDrafts=gearPowerDrafts,GearPowerVoiceDraft=gearPowerVoiceDraft,GearPowerVoiceExpanded=gearPowerVoiceExpanded
+    WindowsPowerDraftScheme=windowsPowerDraftScheme,WindowsPowerDraftAc=windowsPowerDraftAc,WindowsPowerDraftDc=windowsPowerDraftDc,WindowsDisplayDraft=windowsDisplayDraft,MousePerformanceDraft=mousePerformanceDraft,MouseButtonsDraft=CaptureMouseButtonsState(),MouseLightingDraft=mouseLightingDraft,MouseZoneDraft=mouseZoneDraft,MouseCalibrationAutoExpanded=mouseCalibrationAutoExpanded,MouseCalibrationCustomExpanded=mouseCalibrationCustomExpanded,MouseZoneExpanded=mouseZoneExpanded,MouseZoneYExpanded=mouseZoneYExpanded,KeyboardViewsDraft=keyboardViewsDraft,GearPowerDrafts=gearPowerDrafts,GearPowerVoiceDraft=gearPowerVoiceDraft,GearPowerVoiceExpanded=gearPowerVoiceExpanded
    };
    return new JavaScriptSerializer{MaxJsonLength=4194304}.Serialize(state);
   }
@@ -107,6 +112,9 @@ namespace RogControl {
    history.Clear();history.AddRange(state.History??new string[0]);
    openAcUpdate=GitHubUpdateCatalog.NormalizeCachedResult(state.UpdateResult);openAcUpdateMessage=openAcUpdate==null?"":state.UpdateMessage??"";
    CopyPreviewMap(pageReadAttempts,state.PageReadAttempts);
+   gearReadSessions.Clear();foreach(string gearKind in new[]{"mouse","keyboard","headset"})pageReadAttempts.Remove("device:"+gearKind);
+   RestoreMouseButtonsState(state.MouseButtonsDraft);RestoreMouseLightingDraft(state.MouseLightingDraft);RestoreMouseZoneDraft(state.MouseZoneDraft);
+   mouseCalibrationAutoExpanded=state.MouseCalibrationAutoExpanded;mouseCalibrationCustomExpanded=state.MouseCalibrationCustomExpanded;mouseZoneExpanded=state.MouseZoneExpanded;mouseZoneYExpanded=state.MouseZoneYExpanded;
    // LCD capability IDs belong to a process session, so only its local view
    // choices cross replacement. A fresh read must bind the new worker's IDs.
    ResetLcdMonitorSensorDraft();sdkSnapshots.Remove("lcd:7299");pageReadAttempts.Remove("device:motherboard:5\" LCD Display");

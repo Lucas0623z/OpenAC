@@ -15,7 +15,7 @@ namespace RogControl {
    pageReadTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(400)};
    pageReadTimer.Tick+=async(s,e)=>{
     if(!IsLoaded||closing||busy||pageReadRunning||String.IsNullOrEmpty(pendingPageRead))return;
-    string target=pendingPageRead,key=PageReadKey(target);bool preserveDraft=pendingPageReadMayPreserveDraft;pendingPageRead="";if(key==null||preserveDraft&&PreserveLcdMonitorReadDraft(target))return;
+    string target=pendingPageRead,key=PageReadKey(target);bool preserveDraft=pendingPageReadMayPreserveDraft;pendingPageRead="";if(key==null||preserveDraft&&PreserveVisiblePageReadDraft(target))return;
     DateTime attempted;if(pageReadAttempts.TryGetValue(key,out attempted)&&(DateTime.UtcNow-attempted).TotalSeconds<10)return;
     pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=true;
     try{await ReadVisiblePage(target);}catch(Exception ex){if(!closing)Log("读取失败："+ex.Message);}finally{pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=false;}
@@ -32,12 +32,23 @@ namespace RogControl {
    Dictionary<string,object> snapshot;if(!sdkSnapshots.TryGetValue("lcd:7299",out snapshot)||!lcdMonitorDraft.IsCurrent(snapshot))return false;
    foreach(var row in lcdMonitorDraft.Rows)if(row.Category.HasValue||!String.IsNullOrEmpty(row.SensorId))return true;return false;
   }
+  bool PreserveVisiblePageReadDraft(string target) {
+   if(PreserveLcdMonitorReadDraft(target))return true;if(target!="device:mouse")return false;
+   Dictionary<string,object> current;object readSession;if(!gearStates.TryGetValue("mouse",out current)||!CurrentGearReadSession("mouse",current,out readSession))return false;
+   string tab;gearTabs.TryGetValue("mouse",out tab);
+   return tab=="按键"?MouseButtonsHasPendingDraft(current):tab=="灯光"?MouseLightingHasPendingDraft(current):tab=="Zone 模式"&&MouseZoneHasPendingDraft(current);
+  }
+  string PageReadViewKey(string target) {
+   string key=PageReadKey(target)??target;if(target=="device:mouse"||target=="device:keyboard"||target=="device:headset"){
+    string kind=target.Substring(7),tab;return key+":"+(gearTabs.TryGetValue(kind,out tab)?tab:kind=="headset"?"音效":"按键");
+   }return key;
+  }
   void QueuePageRead(string target){
-   string key=PageReadKey(target),viewKey=key??target;bool sameView=lastPageReadViewKey==viewKey;lastPageReadViewKey=viewKey;
+   string key=PageReadKey(target),viewKey=PageReadViewKey(target);bool sameView=lastPageReadViewKey==viewKey;lastPageReadViewKey=viewKey;
    if(render||closing||key==null)return;
    // Editing re-renders must not clear IDs from a still-current read. Entering
    // another view, returning to LCD, or losing the worker permits a fresh read.
-   if(sameView&&PreserveLcdMonitorReadDraft(target)){if(pendingPageRead==target&&pendingPageReadMayPreserveDraft)pendingPageRead="";return;}
+   if(sameView&&PreserveVisiblePageReadDraft(target)){if(pendingPageRead==target&&pendingPageReadMayPreserveDraft)pendingPageRead="";return;}
    bool entryAlreadyQueued=pendingPageRead==target&&!pendingPageReadMayPreserveDraft;
    pendingPageRead=target;pendingPageReadMayPreserveDraft=!entryAlreadyQueued&&sameView;
   }

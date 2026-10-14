@@ -134,7 +134,7 @@ namespace OpenAcTelemetry {
   }
   public static int Main(string[] args){
    if(args.Length!=0)return 2;var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false)){AutoFlush=true};SetStdHandle(-11,GetStdHandle(-12));Console.SetOut(Console.Error);SetErrorMode(0x8007);var session=new TelemetrySession(Native);var executor=new Executor();string line;
-   while((line=Console.ReadLine())!=null){bool restart;string requestLine=line;string response=executor.Run(()=>Reply(session,requestLine),25000,RequestId(requestLine),out restart);output.WriteLine(response);if(restart)return 4;}return 0;
+   while((line=OpenAc.WorkerTextProtocol.ReadLine())!=null){bool restart;string requestLine=line;string response=executor.Run(()=>Reply(session,requestLine),25000,RequestId(requestLine),out restart);output.WriteLine(response);if(restart)return 4;}return 0;
   }
  }
 }

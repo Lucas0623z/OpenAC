@@ -46,7 +46,7 @@ internal static partial class GearLinkWorker
         Console.InputEncoding = new UTF8Encoding(false); Console.OutputEncoding = new UTF8Encoding(false);
         if (args.Contains("--self-test")) { PeripheralSelfTest(); SelfTest(); ExtendedSelfTest(); ReadBoundarySelfTest(); GearIoSelfTest.Run(); return; }
         if (args.Contains("--inventory")) { Console.WriteLine(Json.Serialize(GearHid.Enumerate().Select(d=>d.Metadata()).ToArray())); return; }
-        string line; while ((line=Console.ReadLine())!=null) {
+        string line; while ((line=OpenAc.WorkerTextProtocol.ReadLine())!=null) {
             object id=null; string kind="", op="";
             try { if (line.Length>65536) throw new ArgumentException("Request too large."); var req=Json.Deserialize<Dictionary<string,object>>(line); req.TryGetValue("id",out id); kind=Text(req,"kind");op=Text(req,"op");
                 object result=Handle(req,kind,op);if(GearBoundedIo.RestartRequired)throw new IOException("A pending HID operation did not finish after cancellation. The isolated device worker must be restarted.");

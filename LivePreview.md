@@ -77,5 +77,22 @@ monitor draft checks that same live process session inside the request queue;
 an expired session never silently restarts a worker to send the old IDs. The
 same-page rendering of an active monitor draft also pauses automatic rereads;
 returning to LCD from another view or losing the session permits a fresh read.
+Mouse buttons, static lighting and Zone editing now have data-only draft models.
+Their selection, color, independent X/Y values and calibration expansion states
+survive replacement. Restored observations cannot permit an apply until a fresh
+read replaces the old cache. All gear SET requests use the precise current
+snapshot and a live worker-session token inside the request queue; an expired
+read cannot restart another worker to send its draft. Tab-specific read keys keep
+same-page redraws from replacing current dirty drafts, while returning to a tab
+or losing its process still permits a fresh read. No control permission or active
+apply is transferred.
+
+Worker requests use explicit UTF-8 bytes. Their shared input reader handles only
+known stream-start preambles from Framework process startup, then decodes every
+payload as strict UTF-8. It leaves later BOM characters intact and rejects
+invalid or truncated data without changing a global console encoding. Memory
+fixtures and mock-process requests cover the first-frame failure previously
+seen during the full regression run.
+
 The settings popup keeps single-field actions separate; its unimplemented aggregate
 Save, warning and sleeping-wallpaper controls remain disabled.

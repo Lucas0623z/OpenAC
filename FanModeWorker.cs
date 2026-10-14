@@ -73,6 +73,6 @@ namespace OpenAcFanMode {
    if(op=="read"||op=="scan")throw new FanModeError("NATIVE_TRANSPORT_UNVERIFIED","Fan Xpert has no connected ordinary-caller transport; header readings remain unavailable");
    if(op=="set")throw new FanModeError("WRITE_DISABLED","Fan Xpert settings are disabled before any I/O");throw new FanModeError("INVALID_REQUEST","Only status and explicitly unavailable read/scan/set operations are recognized");
   }catch(Exception e){var error=e as FanModeError;return Json.Serialize(FanModeRules.Obj("id",id,"ok",false,"error",FanModeRules.Obj("code",error==null?"INVALID_REQUEST":error.Code,"message",error==null?"Invalid request":error.Message)));}}
-  public static int Main(string[] args){if(args.Length!=0)return 2;var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false)){AutoFlush=true};string line;while((line=Console.ReadLine())!=null)output.WriteLine(HandleLine(line));return 0;}
+  public static int Main(string[] args){if(args.Length!=0)return 2;var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false)){AutoFlush=true};string line;while((line=OpenAc.WorkerTextProtocol.ReadLine())!=null)output.WriteLine(HandleLine(line));return 0;}
  }
 }

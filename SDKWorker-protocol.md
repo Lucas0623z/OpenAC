@@ -5,8 +5,8 @@
 ## Build and synthetic validation
 
 ```powershell
-& 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe' /nologo /platform:x86 /target:exe /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll /out:SDKWorker.exe SDKWorker.cs
-& 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe' /nologo /platform:x86 /target:exe /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll /main:SDKWorkerTests /out:SDKWorkerTests.exe SDKWorker.cs SDKWorkerTests.cs
+& 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe' /nologo /platform:x86 /target:exe /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll /out:SDKWorker.exe SDKWorker.cs WorkerTextProtocol.cs
+& 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe' /nologo /platform:x86 /target:exe /optimize+ /r:System.Web.Extensions.dll /r:System.Drawing.dll /main:SDKWorkerTests /out:SDKWorkerTests.exe SDKWorker.cs WorkerTextProtocol.cs SDKWorkerTests.cs
 & '.\SDKWorkerTests.exe'
 ```
 

@@ -2,7 +2,7 @@
 
 `NotebookWorker.cs` is an independently written, .NET Framework 4.8 Windows process. It uses `System.Management` for identity and installed-driver metadata, then a restricted ASUS System Control Interface status route. It does not link, launch, or redistribute G-Helper or an ASUS application/DLL. It must be supervised by the main application; native queries are never run on the GUI thread.
 
-Compile with Framework64 `csc.exe`, `/platform:x64`, `/r:System.Web.Extensions.dll` and `/r:System.Management.dll`. It takes no command-line arguments and reads one JSON object per stdin line, with one JSON response per line on stdout. Maximum request length is 16384 characters.
+Compile `NotebookWorker.cs` with `WorkerTextProtocol.cs` using Framework64 `csc.exe`, `/platform:x64`, `/r:System.Web.Extensions.dll` and `/r:System.Management.dll`. It takes no command-line arguments and reads one JSON object per stdin line, with one JSON response per line on stdout. Maximum request length is 16384 characters.
 
 ## API
 
