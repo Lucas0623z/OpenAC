@@ -14,7 +14,7 @@ namespace RogControl {
    if(render)return;
    pageReadTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(400)};
    pageReadTimer.Tick+=async(s,e)=>{
-    if(!IsLoaded||closing||busy||pageReadRunning||DeviceHotplugPageReadsPaused||String.IsNullOrEmpty(pendingPageRead))return;
+    if(!IsLoaded||closing||busy||AuraSyncBusy||pageReadRunning||DeviceHotplugPageReadsPaused||String.IsNullOrEmpty(pendingPageRead))return;
     string target=pendingPageRead,key=PageReadKey(target);bool preserveDraft=pendingPageReadMayPreserveDraft;pendingPageRead="";if(key==null||preserveDraft&&PreserveVisiblePageReadDraft(target))return;
     DateTime attempted;if(pageReadAttempts.TryGetValue(key,out attempted)&&(DateTime.UtcNow-attempted).TotalSeconds<10)return;
     pageReadAttempts[key]=DateTime.UtcNow;pageReadRunning=true;

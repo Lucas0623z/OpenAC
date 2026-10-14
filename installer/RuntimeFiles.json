@@ -10,6 +10,8 @@
     "AudioEndpointWorker.exe",
     "DiscoveryWorker.exe",
     "NotebookWorker.exe",
+    "FanNativeWorker.exe",
+    "WindowsBrightnessWorker.exe",
     "LICENSE",
     "THIRD-PARTY-NOTICES.md",
     "PROVENANCE.md",

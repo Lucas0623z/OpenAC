@@ -25,7 +25,7 @@ internal sealed class LivePreviewHost {
  byte[] pendingAssembly;
  bool building,swapping,stopped;
  int reloads;
- static readonly string[] workers={"DirectAuraWorker.exe","SDKWorker.exe","GearLinkWorker.exe","StorageWorker.exe","AudioEndpointWorker.exe","DiscoveryWorker.exe","NotebookWorker.exe"};
+ static readonly string[] workers={"DirectAuraWorker.exe","SDKWorker.exe","GearLinkWorker.exe","StorageWorker.exe","AudioEndpointWorker.exe","DiscoveryWorker.exe","NotebookWorker.exe","FanNativeWorker.exe","WindowsBrightnessWorker.exe"};
  LivePreviewHost(Application application,bool startInactive) {
   app=application;previewFolder=Path.Combine(root,".preview");payload=Path.Combine(previewFolder,"payload.exe");
   Directory.CreateDirectory(previewFolder);

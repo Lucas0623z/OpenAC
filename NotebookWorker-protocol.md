@@ -1,8 +1,8 @@
-# Notebook and handheld read-only worker
+# Notebook and handheld SCI worker
 
 `NotebookWorker.cs` is an independently written, .NET Framework 4.8 Windows process. It uses `System.Management` for identity and installed-driver metadata, then a restricted ASUS System Control Interface status route. It does not link, launch, or redistribute G-Helper or an ASUS application/DLL. It must be supervised by the main application; native queries are never run on the GUI thread.
 
-Compile `NotebookWorker.cs` with `WorkerTextProtocol.cs` using Framework64 `csc.exe`, `/platform:x64`, `/r:System.Web.Extensions.dll` and `/r:System.Management.dll`. It takes no command-line arguments and reads one JSON object per stdin line, with one JSON response per line on stdout. Maximum request length is 16384 characters.
+Compile `NotebookWorker.cs`, `NotebookControlModel.cs`, `NotebookControl.cs` and `WorkerTextProtocol.cs` using Framework64 `csc.exe`, `/platform:x64`, `/r:System.Web.Extensions.dll` and `/r:System.Management.dll`. It takes no command-line arguments and reads one JSON object per stdin line, with one JSON response per line on stdout. Maximum request length is 16384 characters. The GUI shares only the independent model/validation contract, not the native transport.
 
 ## API
 
@@ -10,11 +10,16 @@ Compile `NotebookWorker.cs` with `WorkerTextProtocol.cs` using Framework64 `csc.
 {"id":1,"op":"scan"}
 {"id":2,"op":"read"}
 {"id":3,"op":"read","features":["cpuFan","gpuFan","cpuTemperature","chargeLimit"]}
+{"id":4,"op":"controlRead"}
 ```
 
 `scan` reads only Windows identity and metadata. It never opens `ATKACPI`. `read` rereads identity every time, so a previously eligible snapshot cannot authorize a different/unknown machine. Default status selection is `cpuFan`, `gpuFan`, `performanceMode`, `chargeLimit`. Selection must contain 1–12 distinct allowlisted names; null, an empty array, duplicates, nonstrings, or any unknown name are rejected. Only `id`, `op` and (for read) `features` are accepted. Callers cannot supply manufacturer, model, path, endpoint, method, control status or XML.
 
-Response envelope is `{id,ok,data,restartRequired}` or `{id,ok:false,error:{code,message},restartRequired}`. An ineligible identity returns `ok:true` with `eligibleForStatus:false`, a specific `supportReason`, empty states/capabilities, and `driverQueryPerformed:false`; this is a completed identity read, not a supported device-control result. JSON serials, UUIDs, hardware instance IDs and user names are not returned.
+`controlRead` accepts only `id` and `op`. It reads six fixed control endpoints and three dependencies on prepared notebooks, or only performance/charging endpoints on prepared handhelds. Each endpoint must return the documented presence bit and a valid bounded status word; a positive number without that bit is insufficient. It returns `controlSchema:1`, `controlStates`, an exact `setCapabilities` list, and process-bound `controlSessionToken`, single-use `controlReadToken` and SHA-256 `controlIdentityToken`. The hash covers OS identity, mobile enclosure, signed SCI driver metadata and current AC/DC evidence, never serials or hardware instance paths. Driver metadata must include a recognized name, ASUS provider, signed boolean and numeric version before control probing.
+
+`set` requires exactly the typed fields `setting`, integer `value`, boolean `experimental:true`, `modelCode`, `identityToken`, `sessionToken` and `readToken`, in addition to `op` and optional `id`. GPU controls also require `acceptDisplayDisruption:true`; MUX additionally requires `acceptReboot:true`. These acknowledgement fields, if supplied, must be booleans. The 30-second read lease is consumed for one attempt; another application needs another manual read. Every set rereads full identity, driver metadata, supported control scope and dependency states, then rereads identity immediately before one fixed DEVS call. Changed model/driver/power, changed capability status, expired lease or different worker session blocks the call. There is no raw packet, endpoint, fallback, INIT, watchdog, retry, automatic policy or automatic restore operation.
+
+Response envelope is `{id,ok,data,restartRequired}` or `{id,ok:false,error:{code,message},restartRequired}`. An ineligible identity returns `ok:true` with `eligibleForStatus:false`, a specific `supportReason`, empty states/capabilities, and `driverQueryPerformed:false`; this is a completed identity read, not a supported device-control result. Hardware serials, firmware UUIDs, hardware instance IDs and user names are not returned; control tokens are temporary random process/read identifiers.
 
 ## Identity and driver gates
 
@@ -34,12 +39,15 @@ All gates must hold before an ASUS native handle is opened:
 | GA402RJ | ROG notebook | [ASUS exact support model](https://www.asus.com/jp/supportonly/ga402rj/helpdesk_download/), [ASUS SCI V3 model list](https://www.asus.com/support/images/upload/file/20211216093201978_ASCIv3modelist211215.pdf) |
 | GU605MI | ROG notebook | [ASUS G16 (2024) specs](https://rog.asus.com/ru/laptops/rog-zephyrus/rog-zephyrus-g16-2024/spec/) |
 | FX507ZC4 | TUF notebook | [ASUS exact support model](https://www.asus.com/supportonly/fx507zc4/helpdesk_download/) |
+| FA507NV | TUF notebook | [ASUS exact SCI driver page](https://www.asus.com/us/supportonly/fa507nv/helpdesk_download/) |
+| GA403UI | ROG notebook | [ASUS exact support model](https://www.asus.com/us/supportonly/ga403ui/helpdesk_download/) |
+| GU605MZ | ROG notebook | [ASUS SCI V3 support list](https://km-ap.asus.com/uploads/AttachLibrarys/8a53fc79-6a00-4a96-8408-a7e886967aef/20240506160932760_ASUS_System_Control_Interface_v3modellist.pdf) |
 
-This is a small source-prepared set. No portable ASUS machine was available for physical query validation. `hardwareReadValidated:false`, `physicalValidation:false` and `supportsWrite:false` remain explicit. All other ROG/TUF/ProArt/Vivobook/Zenbook/ExpertBook variants remain identity-only until their exact model and route are prepared. A prepared model does not imply every listed endpoint is present; each response must independently confirm presence.
+This is a ten-model source-prepared set, not all ASUS mobile devices. No portable ASUS machine was available for physical query/write validation. `hardwareReadValidated:false` and `physicalValidation:false` remain explicit. `supportsWrite` is false on scan/ordinary telemetry; only a fresh control capture may expose individually prepared capabilities. All other ROG/TUF/ProArt/Vivobook/Zenbook/ExpertBook variants remain identity-only until their exact model and route are prepared. A prepared model does not imply every listed endpoint is present.
 
 ## Restricted status interface
 
-The only native control code is `0x0022240C`, with method `DSTS` (`0x53545344`) and a 16-byte little-endian input: method word, argument-size word 8, allowlisted endpoint word, zero control-status word. Windows opens the canonical device path `\\.\ATKACPI` with the access required by the installed interface. This handle access does not authorize setting operations: there is no DEVS, INIT, watchdog, event subscription, endpoint scan, or caller-controlled command encoder in this worker. Return status and returned-byte count must be valid; only 4–16 returned bytes are parsed.
+The native control code is `0x0022240C`. DSTS (`0x53545344`) uses a 16-byte little-endian input: method word, argument-size word 8, allowlisted endpoint word, zero status word. A prepared set uses DEVS (`0x53564544`) with the same fixed argument size and the independently validated parameter. Windows opens the canonical device path `\\.\ATKACPI` with the access required by the installed interface. Return status and returned-byte count must be valid; only 4–16 returned bytes are parsed. Handle access does not bypass the typed operation and current-capability gates.
 
 | Feature | DSTS endpoint | Prepared response interpretation |
 |---|---|---|
@@ -53,10 +61,25 @@ The only native control code is `0x0022240C`, with method `DSTS` (`0x53545344`) 
 | performanceMode | 0x00120075 | Native status value 0–4; current BIOS mode unconfirmed |
 | gpuEco | 0x00090020 | Native status 0/1, notebook only |
 | gpuMux | 0x00090016 | Native status 0/1, notebook only |
-| keyboardBrightness | 0x00050021 | Low-byte level 0–3; notebook only |
+| keyboardBrightness | 0x00050021 | Low 7-bit level 0–3, excluding the on bit; notebook only |
 | displayOverdrive | 0x00050019 | Native status 0/1, notebook only |
 
 The source defines presence flag `0x00010000`; `0xFFFFFFFE`, `0xFFFFFFFF`, missing presence, or unknown high flags produce unknown values. Known presence/user/BIOS flags are separate from the value. `readbackConfirmed` confirms the native status word, while `valueReadbackConfirmed` confirms only the interpretation implemented here. Selected mode/charge/display/GPU endpoints use `valueSemantics:"nativeStatus"`, `queryValue` with **`value:null`**: the adapter does not infer the current configured setting from a capability/status result. Fan speed and temperatures have interpreted values only after validation. Temperature 0–150 is a conservative parser sanity bound, not a hardware setting range. Out-of-range responses keep the endpoint presence but do not claim usable read support. A missing endpoint produces unknown state and does not make other features disappear.
+
+## Prepared single-setting controls
+
+| Setting | Values and fixed wire parameter | Additional fresh guard |
+|---|---|---|
+| performanceMode | 0 balanced / 1 turbo / 2 silent | Turbo requires confirmed AC power; full-speed/manual 3/4 are not exposed |
+| chargeLimit | Integer 40–100% | Presence/valid status; queried value is not shown as configured threshold |
+| keyboardBrightness | Level 0–3, parameter `0x80 | level` | Prepared notebook only; current-value parser must be valid |
+| displayOverdrive | 0 off / 1 on | Separate supported panel endpoint 0x00050020 must be present with value 1 |
+| gpuEco | 0 standard / 1 disable dGPU | Disabling requires known hybrid MUX, no external display and inactive/unsupported XG Mobile |
+| gpuMux | 0 dedicated / 1 hybrid | Dedicated requires dGPU enabled, no external display and inactive/unsupported XG Mobile; manual restart may be required |
+
+GPU handling does not terminate applications, rescan PCI, restart Windows or attempt a second write. Unknown dependencies remove the disruptive value from `allowedValues`. These are restricted SCI requests, not the whole G-Helper GPU transition/recovery workflow.
+
+A completed IOCTL and a driver acknowledgement are distinct from actual configuration confirmation. Mode, charge, Overdrive and GPU submissions return `appliedState:"submittedUnconfirmed"` for recognized responses, `writeConfirmed:false` and `restorable:false`; raw DSTS values are never promoted to configured settings or used to invent restoration. Brightness alone has an established current-value decoder: a matching acknowledged readback may return `confirmed`, and a fresh equal level may return `alreadySet` without DEVS. Invalid/failed output or changed identity is reported as `writeEffectUnknown`; no silent retry or rollback occurs.
 
 ## Blocking and concurrency
 
@@ -64,9 +87,11 @@ WMI and synchronous ASUS driver calls run in a background thread within the isol
 
 `Local\OpenAC.Notebook.Status` serializes actual native query batches between OpenAC processes. It is held only by the background query thread and released after the handle is disposed. It cannot coordinate with the ASUS application or G-Helper; users should avoid simultaneously changing the same notebook settings while assessing a snapshot. No service is stopped or modified.
 
+The GUI uses a supervised worker's existing session and a callback inside its held send lane, after process/session checks and immediately before frame construction. The callback rechecks cancellation, live control permission, closing/render state, exact snapshot and control-capture references, capability values, lease age, selected draft and GPU acknowledgements. Queued invalidation therefore emits no SET frame. A rejected callback does not restart or kill an otherwise healthy worker. The generic read backend still rejects setting operations.
+
 ## Explicit unsupported scope
 
-Every setting operation is rejected before identity or native I/O, regardless of the GUI experimental-write switch. No notebook fan curve, calibration, power limit, charge-limit setter, GPU mode switch, undervolt, keyboard RGB, AniMe Matrix, Slash lighting, Ally gamepad remapping, hotkey subscription, display change, driver install or firmware update is implemented here. Those paths have model-specific requirements; importing G-Helper's advertised feature list would not validate OpenAC. Desktop Fan Xpert uses a different installed AiSuite SDK path and is not made functional by this notebook adapter.
+There is no notebook fan curve, power limit, undervolt, keyboard RGB, AniMe Matrix, Slash lighting, Ally gamepad remapping, hotkey subscription, driver install or firmware update here. Automatic GPU/power policies and complete GPU transition/recovery remain absent. Those paths have model-specific requirements; importing G-Helper's advertised feature list would not validate OpenAC. Desktop Fan Xpert uses a different installed AiSuite SDK path.
 
 ## Provenance
 
@@ -82,8 +107,10 @@ Selected endpoint IDs, DSTS packet fields and RPM units were studied as interfac
 
 Presence masks and selected endpoint facts were cross-checked against [Linux asus-wmi.h at 24a19b953e2a3d0ea5a8c4951a0ab8f32720c907](https://github.com/torvalds/linux/blob/24a19b953e2a3d0ea5a8c4951a0ab8f32720c907/include/linux/platform_data/x86/asus-wmi.h), SHA-256 C5B861725B9BC842C8F55B3215E4C173A7B350E95BDD05B319EB823E49F26F99. The GPL header itself is private reference material, not redistributed or included by the build. Windows API declarations and WMI fields follow [DeviceIoControl](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-deviceiocontrol), [Win32_ComputerSystem](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-computersystem), [Win32_SystemEnclosure](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemenclosure), and [Win32_PnPSignedDriver](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/aa394354(v=vs.85)) API documentation. ASUS documents the installed [System Control Interface driver requirement](https://www.asus.com/support/faq/1047338/).
 
+The new control contracts were checked against fixed [Linux v6.17 asus-wmi.c](https://github.com/torvalds/linux/blob/v6.17/drivers/platform/x86/asus-wmi.c) and the same fixed G-Helper SCI source: numeric DEVS method/endpoint/parameter facts, documented presence detection, mode encoding, backlight on bit, and GPU dependency restrictions. No implementation function, OEM/GPL model table or automatic policy was copied. AC evidence uses Microsoft's [GetSystemPowerStatus](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getsystempowerstatus) API. The ASUS May 2024 SCI list independently lists FA507NV, GA403UI and GU605MZ.
+
 ## Validation
 
-The GUI exposes a manual **Tools → 笔记本与掌机 → 检测设备** entry. It requests identity first and reads only the fixed status features for an eligible model. Rendering, navigating, and the one-second expiry timer make no notebook query. Observations expire after 30 seconds; unknown query bits are not labelled as the configured BIOS mode, GPU mode, or charge limit. `NotebookGuiTests.cs` adds 766 fake-backend checks and 26 unshown layouts. GUI cancellation and timeout quarantine share a stable AppDomain request gate across preview assemblies. NotebookWorker is the seventh installed runtime worker; staging it does not imply mobile hardware verification.
+The GUI exposes manual **Tools → 笔记本与掌机 → 读取**. It requests identity, scoped telemetry and then control capabilities on the existing worker session. Rendering, navigation and the one-second expiry timer make no notebook query. Observations/capabilities expire after 30 seconds. Control choices only edit local drafts; each Apply checks the exact current snapshot reference, worker session, current allowed values, session-only control permission, busy/closing/expiry and GPU acknowledgements. A SET consumes its capture and requires a new manual read for further applications. No running operation, control permission or worker lease is restored across preview reloads. Existing 766 fake-backend checks and 26 unshown layouts continue to pass.
 
-`NotebookWorkerTests.cs` uses injected identities and fake native responses only. It exercises desktop/non-ASUS/unknown/ambiguous model rejection, all enclosure gates, driver gating, refreshed identity snapshots, exact DSTS fields, unsupported responses, bounds and flag parsing, mode-status uncertainty, write/arbitrary-command rejection, fail-fast driver errors, timeout quarantine and late-completion prevention. Initial suite: **117 checks passed**; WMI queries 0, ATKACPI opens 0, hardware writes 0. Runtime validation on this desktop should report an ineligible mobile gate and perform no ASUS IOCTL.
+`NotebookWorkerTests.cs`, `NotebookControlTests.cs` and `NotebookControlGuiTests.cs` use injected identities, fake native responses and unshown layouts only. They cover desktop/model/driver gates, fixed packets, single-use leases, schema/type/bounds, endpoint presence, AC/GPU dependencies, same-value brightness, response uncertainty, identity races, deadline quarantine and GUI permission/session/lifecycle barriers. WMI/ATKACPI/native writes are zero in these tests. Runtime validation on a desktop must remain ineligible and perform no ASUS IOCTL. Real mobile controls have not been physically validated.

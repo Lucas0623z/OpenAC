@@ -16,19 +16,56 @@ namespace RogControl {
   readonly Dictionary<string,LocalFanProfile> localFanProfiles=LocalFeatureStore.Load("fan-profiles.json",new Dictionary<string,LocalFanProfile>())??new Dictionary<string,LocalFanProfile>();
   readonly Dictionary<string,string> fanAliases=LocalFeatureStore.Load("fan-names.json",new Dictionary<string,string>())??new Dictionary<string,string>();
   string fanControlPort="1";string fanControlMode="smart";FanPoint[] fanDraft;int fixedRpmDraft;string nativeSettingsMessage="";
+  readonly Dictionary<string,SharedWriteReadBinding> sdkReadBindings=new Dictionary<string,SharedWriteReadBinding>(StringComparer.Ordinal);
+  void RememberSdkRead(string kind,string id,Dictionary<string,object> snapshot,WorkerClient client,long generation) {
+   string key=kind+":"+id;sdkReadBindings.Remove(key);
+   if(closing||render||generation!=DeviceHotplugGeneration||client.SessionIdentity==null)throw new InvalidOperationException("设备读取连接已改变，请重新读取。");
+   snapshot["capturedAt"]=DateTime.Now.ToString("o");sdkSnapshots[key]=snapshot;
+   if(OriginalStateText(snapshot,"deviceId","")==id&&OriginalStateFlag(snapshot,"readbackConfirmed")==true&&OriginalStateFlag(snapshot,"deviceAlive")==true)
+    sdkReadBindings[key]=new SharedWriteReadBinding(snapshot,client.SessionIdentity,generation,"deviceId",id,null,kind);
+   if(kind=="lcd"&&id=="7299")BindLcdMonitorRead(snapshot,client.SessionIdentity,()=>client.SessionIdentity);
+  }
+  void ForgetSdkRead(string kind,string id){sdkReadBindings.Remove(kind+":"+id);sdkSnapshots.Remove(kind+":"+id);if(kind=="lcd"&&id=="7299")ResetLcdMonitorSensorDraft();}
+  bool SdkSettingSupported(string kind,Dictionary<string,object> state,string setting,Dictionary<string,object> request) {
+   if(OriginalStateFlag(state,"readbackConfirmed")!=true||OriginalStateFlag(state,"deviceAlive")!=true||OriginalStateFlag(state,"supportsWrite")!=true)return false;
+   var settings=GearArray(state,"supportedSettings");if(settings==null||!settings.Any(value=>value is string&&(string)value==setting))return false;
+   if(kind=="lcd") {
+    switch(setting) {
+     case "powerS0":case "powerS5":return OriginalStateFlag(state,setting).HasValue&&OriginalStateFlag(request,"value").HasValue;
+     case "brightness":int? brightness=MouseInteger(request,"value",10,100);return OriginalStateFlag(state,"brightnessWritable")==true&&brightness.HasValue&&brightness.Value%10==0;
+     case "standby":return OriginalStateFlag(state,"standbyWritable")==true;
+     case "presetId":return OriginalStateFlag(state,"presetWritable")==true;
+     case "uploadImage":return OriginalStateFlag(state,"imageUploadWritable")==true;
+     case "selectMedia":return OriginalStateFlag(state,"mediaSelectWritable")==true;
+     case "deleteMedia":return OriginalStateFlag(state,"mediaDeleteWritable")==true;
+     case "hardwareMonitor":string[] sensors;object session;var ids=GearArray(request,"sensorIds");int? background=MouseInteger(request,"backgroundId",8,11);return OriginalStateFlag(state,"hardwareMonitorWritable")==true&&background.HasValue&&background.Value==lcdMonitorBackground&&lcdMonitorDraft.TryBuild(state,background.Value,lcdMonitorInfoCount,out sensors,out session)&&ids!=null&&ids.All(value=>value is string)&&sensors.SequenceEqual(ids.Cast<string>());
+     default:return false;
+    }
+   }
+   if(kind!="fan")return false;
+   string flag=setting=="smart"?"supportsSmartCurve":setting=="fixed"?"supportsFixedRpm":setting=="fanCount"?"supportsFanCount":setting=="lighting"?"supportsLighting":setting=="disconnectLightingChain"?"supportsDisconnectLightingChain":setting=="temperatureSources"?"supportsTemperatureSources":null;
+   if(flag==null||OriginalStateFlag(state,flag)!=true)return false;
+   if(setting=="smart"||setting=="fixed") {var ports=GearArray(state,"ports");string port=OriginalStateText(request,"portId","");var candidates=ports==null?new Dictionary<string,object>[0]:ports.OfType<Dictionary<string,object>>().Where(item=>OriginalStateText(item,"portId","")==port).ToArray();return candidates.Length==1&&OriginalStateFlag(candidates[0],"supportsWrite")==true&&OriginalStateFlag(candidates[0],flag)==true;}
+   return true;
+  }
+  void DemandSdkWrite(string kind,string id,string setting,Dictionary<string,object> request,SharedWriteReadBinding binding,WorkerClient client) {
+   Dictionary<string,object> current;SharedWriteReadBinding receipt;sdkSnapshots.TryGetValue(kind+":"+id,out current);sdkReadBindings.TryGetValue(kind+":"+id,out receipt);
+   if(!Object.ReferenceEquals(binding,receipt))throw new InvalidOperationException("设备读取已更新，请重新选择设置。");
+   binding.Demand(current,client.SessionIdentity,DeviceHotplugGeneration,DeviceHotplugBindingsReady,closing,render,AuraSyncBusy,busy,hardwareControlPolicy.Demand,()=>SdkSettingSupported(kind,current,setting,request),System.Threading.CancellationToken.None);
+  }
   static bool ValidFanPoints(FanPoint[] points){if(points==null||points.Length!=4)return false;for(int i=0;i<4;i++){var p=points[i];if(p==null||p.temperature<0||p.temperature>100||p.percentage<0||p.percentage>100||i==0&&p.temperature!=0||i>0&&(p.temperature<=points[i-1].temperature||p.percentage<points[i-1].percentage))return false;}return true;}
   static FanPoint[] ParseFanPoints(IList<TextBox> temperatures,IList<TextBox> duties){var points=new FanPoint[4];for(int i=0;i<4;i++){int temp,duty;if(!Int32.TryParse(temperatures[i].Text,out temp)||!Int32.TryParse(duties[i].Text,out duty))return null;points[i]=new FanPoint{temperature=temp,percentage=duty};}return ValidFanPoints(points)?points:null;}
   void SaveLocalFanState(){try{LocalFeatureStore.Save("fan-profiles.json",localFanProfiles);}catch(Exception ex){Log("设备命令已完成，本地配置保存失败："+ex.Message);}}
   async Task<Dictionary<string,object>> SetOriginalNative(string kind,string id,string setting,Dictionary<string,object> arguments,object expectedWorkerSession=null) {
-   if(busy||closing||render)return null;if(!PermitHardwareWrite())return null;busy=true;status.Text="正在应用设备设置…";ShowPage(page);
+   if(busy||AuraSyncBusy||closing||render)return null;if(!PermitHardwareWrite())return null;busy=true;status.Text="正在应用设备设置…";ShowPage(page);
    Dictionary<string,object> result=null;
-   try {var client=Sdk(kind);var request=new Dictionary<string,object>(arguments);request["op"]="set";request["kind"]=kind;request["deviceId"]=id;request["setting"]=setting;var reply=await client.Request<SdkReply>(request,expectedWorkerSession);if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));result=reply.data;
+   try {var client=Sdk(kind);SharedWriteReadBinding binding;if(!sdkReadBindings.TryGetValue(kind+":"+id,out binding)||expectedWorkerSession!=null&&!Object.ReferenceEquals(expectedWorkerSession,binding.Session))throw new InvalidOperationException("请重新读取原设备后应用。");var json=new System.Web.Script.Serialization.JavaScriptSerializer();var request=json.Deserialize<Dictionary<string,object>>(json.Serialize(arguments));request["op"]="set";request["kind"]=kind;request["deviceId"]=id;request["setting"]=setting;DemandSdkWrite(kind,id,setting,request,binding,client);var reply=await client.Request<SdkReply>(request,binding.Session,kind=="lcd"?25000:15000,()=>DemandSdkWrite(kind,id,setting,request,binding,client));if(!reply.ok)throw new InvalidOperationException(SdkError(reply.error));if(closing||binding.Generation!=DeviceHotplugGeneration||!Object.ReferenceEquals(binding.Session,client.SessionIdentity))throw new InvalidOperationException("设备连接已改变，设置结果未确认。");if(reply.data==null||OriginalStateText(reply.data,"deviceId","")!=id||OriginalStateText(reply.data,"setting","")!=setting)throw new InvalidOperationException("设备设置读回目标不匹配。");result=reply.data;
     string state=OriginalStateText(result,"appliedState","unconfirmed");nativeSettingsMessage=state=="verified"?"设置已应用并读回确认。":state=="alreadySet"?"当前设置已经相同，没有发送写入。":state=="mismatch"?"设备读回值与请求不同，请检查设备状态。":OriginalStateFlag(result,"hardwareAcknowledged")==true?"设备已接受命令；当前设置无法读回确认。":"接口调用已完成，设备尚未确认命令生效。";
     if(OriginalStateText(result,"readbackScope","")=="configuredProfile"&&OriginalStateFlag(result,"profileReadbackConfirmed")==true)nativeSettingsMessage="显示配置已读回确认；请查看实体屏幕确认图像。";
     object warning;if(result!=null&&result.TryGetValue("verificationWarning",out warning))nativeSettingsMessage+=" "+Convert.ToString(warning);
     // Keep observed settings separate from the last requested software profile.
-    var read=await client.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}});if(read.ok&&read.data!=null&&OriginalStateFlag(read.data,"readbackConfirmed")==true){read.data["capturedAt"]=DateTime.Now.ToString("o");sdkSnapshots[kind+":"+id]=read.data;if(kind=="lcd"&&id=="7299")BindLcdMonitorRead(read.data,client.SessionIdentity,()=>client.SessionIdentity);}else{sdkSnapshots.Remove(kind+":"+id);if(kind=="lcd"&&id=="7299")ResetLcdMonitorSensorDraft();}Log(nativeSettingsMessage);
-   }catch(Exception ex){sdkSnapshots.Remove(kind+":"+id);if(kind=="lcd"&&id=="7299")ResetLcdMonitorSensorDraft();nativeSettingsMessage="应用未完成，当前设备状态需要重新读取："+ex.Message;Log(nativeSettingsMessage);}finally{busy=false;if(!closing)ShowPage(page);}return result;
+    var read=await client.Request<SdkReply>(new Dictionary<string,object>{{"op","read"},{"kind",kind},{"deviceId",id}},binding.Session,kind=="lcd"?25000:15000,()=>{if(closing||render||binding.Generation!=DeviceHotplugGeneration)throw new OperationCanceledException();});if(read.ok&&read.data!=null&&OriginalStateText(read.data,"deviceId","")==id&&OriginalStateFlag(read.data,"readbackConfirmed")==true)RememberSdkRead(kind,id,read.data,client,binding.Generation);else ForgetSdkRead(kind,id);Log(nativeSettingsMessage);
+   }catch(Exception ex){ForgetSdkRead(kind,id);nativeSettingsMessage="应用未完成，当前设备状态需要重新读取："+ex.Message;Log(nativeSettingsMessage);}finally{busy=false;if(!closing)ShowPage(page);}return result;
   }
   void OpenLcdSettings() {
    if(busy||closing||render)return;

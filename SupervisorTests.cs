@@ -29,6 +29,20 @@ class SupervisorTests {
    reply=await worker.Request(new Dictionary<string,object>{{"op","scan"}});Check(reply.ok,"Worker did not restart after timeout.");
    object third=worker.SessionIdentity;Check(third!=null&&!Object.ReferenceEquals(second,third),"Timeout recovery creates a fresh session.");
    foreach(int invalid in new[]{0,-1,501}){bool refused=false;try{await worker.Request<Reply>(new Dictionary<string,object>{{"op","scan"}},third,invalid);}catch(ArgumentOutOfRangeException){refused=true;}Check(refused&&Object.ReferenceEquals(third,worker.SessionIdentity),"Invalid request budgets cannot touch a worker.");}
+   // Change each binding after a command is queued, before it owns the lane.
+   // A live process alone is insufficient authorization for a pending frame.
+   foreach(string changed in new[]{"permission","topology","closing","stop"}){
+    bool allowed=true;int checksAtSend=0;var occupying=worker.Request<Reply>(new Dictionary<string,object>{{"op","holdLane"}},third);
+    var blockedFrame=new Dictionary<string,object>{{"op","scan"}};
+    var pending=worker.Request<Reply>(blockedFrame,third,500,()=>{checksAtSend++;if(!allowed)throw new InvalidOperationException(changed);});
+    Check(checksAtSend==0&&!blockedFrame.ContainsKey("id"),"Queued validation waits for the held lane: "+changed);allowed=false;
+    Check((await occupying).ok,"The command already holding the lane completes: "+changed);
+    bool rejected=false;try{await pending;}catch(InvalidOperationException){rejected=true;}
+    Check(rejected&&checksAtSend==1&&!blockedFrame.ContainsKey("id"),"Changed binding emits no frame: "+changed);
+    Check(worker.Running&&Object.ReferenceEquals(third,worker.SessionIdentity),"Rejected callback keeps its live process intact: "+changed);
+   }
+   int sentValidation=0;reply=await worker.Request<Reply>(new Dictionary<string,object>{{"op","scan"}},third,500,()=>sentValidation++);
+   Check(reply.ok&&sentValidation==1,"A valid command rechecks its binding exactly once immediately before sending.");
    var hanging=worker.Request<Reply>(new Dictionary<string,object>{{"op","hang"}},third,400);var queued=new Dictionary<string,object>{{"op","scan"}};bool queueTimeout=false;try{await worker.Request<Reply>(queued,third,75);}catch(TimeoutException){queueTimeout=true;}Check(queueTimeout&&!queued.ContainsKey("id")&&Object.ReferenceEquals(third,worker.SessionIdentity),"Queue expiry emits no frame and does not kill the active request.");
    bool shortTimeout=false;try{await hanging;}catch(TimeoutException){shortTimeout=true;}Check(shortTimeout&&!worker.Running&&worker.SessionIdentity==null,"A shorter in-flight budget kills and invalidates its worker.");
    denied=new Dictionary<string,object>{{"op","scan"}};Check(await SessionRejected(worker,third,denied)&&!denied.ContainsKey("id"),"Timed-out bounded request cannot resume a replacement connection.");

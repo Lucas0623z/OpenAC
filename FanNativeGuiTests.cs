@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: MIT. Injected JSON/unshown layout; native COM/GET/SET=0.
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using RogControl;
+internal static class FanNativeGuiTests {
+ static int checks;static void Check(bool valid,string message){checks++;if(!valid)throw new Exception(message);}
+ static Dictionary<string,object> Obj(params object[] values){var d=new Dictionary<string,object>();for(int i=0;i<values.Length;i+=2)d.Add((string)values[i],values[i+1]);return d;}
+ static Dictionary<string,object> Fixture(){return Obj("nativePropertyReadConfirmed",true,"supportsWrite",false,"source","AsusFanControlService.COM","count",2,"headers",new object[]{Obj("id",0,"displayName","CPU Fan","supportsWrite",false,"rpm",null),Obj("id",7,"displayName","Water Pump+ 1","supportsWrite",false,"rpm",null)});}
+ static readonly MethodInfo Parse=typeof(MainWindow).GetMethod("FanNativeNames",BindingFlags.Static|BindingFlags.NonPublic);
+ static string[] Names(Dictionary<string,object> state){return (string[])Parse.Invoke(null,new object[]{state});}
+ static Dictionary<string,object> First(Dictionary<string,object> state){return (Dictionary<string,object>)((object[])state["headers"])[0];}
+ static void Reject(Action<Dictionary<string,object>> damage){var state=Fixture();damage(state);bool refused=false;try{Names(state);}catch(TargetInvocationException e){refused=e.InnerException is InvalidDataException;}Check(refused,"Malformed/unconfirmed fan state cannot become an observed port list.");}
+ static IEnumerable<DependencyObject> Walk(DependencyObject root){yield return root;foreach(object child in LogicalTreeHelper.GetChildren(root)){var node=child as DependencyObject;if(node!=null)foreach(var nested in Walk(node))yield return nested;}}
+ static void Field(MainWindow window,string name,object value){typeof(MainWindow).GetField(name,BindingFlags.NonPublic|BindingFlags.Instance).SetValue(window,value);}
+ static object Field(MainWindow window,string name){return typeof(MainWindow).GetField(name,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(window);}
+ static void View(MainWindow window,double width){typeof(MainWindow).GetMethod("ShowPage",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(window,new object[]{"Fan Xpert"});var frame=(FrameworkElement)window.Content;frame.Measure(new Size(width,826));frame.Arrange(new Rect(0,0,width,826));frame.UpdateLayout();var nodes=Walk(frame).ToArray();Check(nodes.OfType<Button>().Single(b=>Object.Equals(b.Tag,"fan-native-read")).IsEnabled==false,"Unshown render mode cannot start a worker.");Check(nodes.OfType<TextBlock>().Any(t=>t.Text=="— rpm"),"Native raw duty is never invented as RPM.");Check(nodes.OfType<TextBlock>().Any(t=>t.Text=="CPU Fan")&&nodes.OfType<TextBlock>().Any(t=>t.Text=="Water Pump+ 1"),"Only observed names populate an injected complete list.");Check(!nodes.OfType<TextBlock>().Any(t=>t.Text=="Chassis Fan 1"),"An observed list does not fabricate missing headers.");Check(!((WorkerClient)Field(window,"fanNativeWorker")).Running,"GUI layout has no native activation.");}
+ [STAThread]static int Main(){try{Check(Names(Fixture()).SequenceEqual(new[]{"CPU Fan","Water Pump+ 1"}),"Exact read-only headers preserve source order.");
+  foreach(var damage in new Action<Dictionary<string,object>>[]{d=>d["nativePropertyReadConfirmed"]=false,d=>d["supportsWrite"]=true,d=>d["source"]="Other",d=>d["count"]=1,d=>d["count"]=2.0,d=>d["headers"]="two",d=>First(d)["id"]=-1,d=>First(d)["id"]=0.5,d=>First(d)["id"]=UInt64.MaxValue,d=>First(d)["displayName"]="CPU\nFan",d=>First(d)["displayName"]="",d=>First(d)["supportsWrite"]=true,d=>First(d)["rpm"]=1234,d=>((Dictionary<string,object>)((object[])d["headers"])[1])["id"]=0,d=>((Dictionary<string,object>)((object[])d["headers"])[1])["displayName"]="CPU Fan"})Reject(damage);
+  var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};var window=new MainWindow(true);Field(window,"fanNativeSnapshot",Fixture());View(window,1180);View(window,1538);
+  var many=Fixture();many["count"]=32;many["headers"]=Enumerable.Range(0,32).Select(i=>Obj("id",i,"displayName","Observed fan "+i+" "+new string('x',220),"supportsWrite",false,"rpm",null)).ToArray();Field(window,"fanNativeSnapshot",many);typeof(MainWindow).GetMethod("ShowPage",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(window,new object[]{"Fan Xpert"});var large=(FrameworkElement)window.Content;large.Measure(new Size(1180,826));large.Arrange(new Rect(0,0,1180,826));large.UpdateLayout();var largeNodes=Walk(large).ToArray();var list=largeNodes.OfType<ScrollViewer>().Single(s=>Object.Equals(s.Tag,"fan-native-list"));Check(list.ScrollableHeight>0&&list.Height==320&&list.HorizontalScrollBarVisibility==ScrollBarVisibility.Disabled,"Maximum valid header count scrolls inside its original list column.");list.ScrollToEnd();large.UpdateLayout();Check(list.VerticalOffset>0,"Final header can be reached without changing the page layout.");var longLabels=largeNodes.OfType<TextBlock>().Where(t=>t.Text.StartsWith("Observed fan ")).ToArray();Check(longLabels.Length==32&&longLabels.All(t=>t.MaxWidth==114&&t.TextTrimming==TextTrimming.CharacterEllipsis&&Object.Equals(t.ToolTip,t.Text)),"Long native names stay inside the list and retain full-name tooltips.");Check(!((WorkerClient)Field(window,"fanNativeWorker")).Running,"Large list layout has no native calls.");
+  Check(window.FanNativeCanPreviewReload,"Idle fan read allows preview replacement.");Field(window,"fanNativeReadTask",new TaskCompletionSource<bool>().Task);Check(!window.FanNativeCanPreviewReload,"Pending getter blocks preview replacement.");Field(window,"fanNativeReadTask",null);window.Close();app.Shutdown();Console.WriteLine("Fan native GUI: "+checks+" pure checks; 3 unshown layouts; native/worker/GET/SET=0.");return 0;
+ }catch(Exception error){Console.Error.WriteLine(error);return 1;}}
+}

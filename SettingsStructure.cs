@@ -84,9 +84,9 @@ namespace RogControl {
   }
 
   void OriginalAdvancedHardwareControl() {
-   var controls=new CheckBox{Content="启用",Foreground=text,IsChecked=hardwareControlPolicy.Enabled,IsEnabled=!busy&&!closing&&!render,ToolTip="仅本次运行",Margin=new Thickness(0,8,0,12)};
-   RoutedEventHandler change=(s,e)=>{if(busy||closing||render)return;hardwareControlPolicy.SetEnabled(controls.IsChecked==true);ShowPage(page);};controls.Checked+=change;controls.Unchecked+=change;
-   content.Children.Add(new Expander{Header="设备控制",Content=controls,Foreground=text,HorizontalContentAlignment=HorizontalAlignment.Stretch,IsExpanded=false});
+   var controls=new CheckBox{Content="启用设备控制",Foreground=text,IsChecked=hardwareControlPolicy.Enabled,IsEnabled=!busy&&!closing&&!render,ToolTip="开启后可以手动应用已适配的设备设置；开关本身不发送设备命令。仅本次运行有效。",Margin=new Thickness(0,8,0,12)};
+   RoutedEventHandler change=(s,e)=>SetSessionHardwareControl(controls.IsChecked==true);controls.Checked+=change;controls.Unchecked+=change;
+   content.Children.Add(new Expander{Header="设备控制",Content=controls,Foreground=text,HorizontalContentAlignment=HorizontalAlignment.Stretch,IsExpanded=!hardwareControlPolicy.Enabled});
   }
  }
 }

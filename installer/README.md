@@ -5,13 +5,15 @@
 ## 安装范围
 
 - 仅当前用户，固定目录为 `%LOCALAPPDATA%\Programs\OpenAC`，不可改到其他目录。
-- 只安装 `RuntimeFiles.json` 的 17 个明确文件（含笔记本/掌机只读工作进程）；主程序为 `OpenAC.exe`。
+- 当前开发清单只安装 `RuntimeFiles.json` 的19个明确文件；主程序为 `OpenAC.exe`。九个工作进程为DirectAura、GearLink、SDK、Storage、AudioEndpoint、Discovery、Notebook、FanNative、WindowsBrightness。
 - 可选择当前用户的开始菜单及桌面快捷方式，卸载条目仅写 HKCU。
 - 显示 MIT 许可证，需勾选后点击安装；不会自动启动主程序。
 - 安装不修改 ASUS 服务、驱动、固件或硬件设置。OpenAC 的实验性设备写入仍默认关闭。
 - 清单不包含官网图片、用户配置、原厂二进制、源码包、测试程序或 reverse-analysis 下载。
 
 此预览安装器未签名。源码与发行 hash 可供核对；这些 hash 不是代码签名或 ASUS 授权。
+
+普通启动默认关闭设备控制；开发preview同一进程热更只保留使用者本次明确的内存开关，不存磁盘或从配置授权，不自动Apply。它不是安装器授予的权限。7489耳机静态事务与后续相位请求已新增纯验证，仍没有实物灯光SET验收；不能凭安装成功宣称所有灯光能控制。
 
 ## 构建
 
@@ -46,9 +48,11 @@
 
 ## 卸载和文件所有权
 
-安装时保存 `INSTALLER-OWNERSHIP.json`，并将同一安装器复制为 `Uninstall.exe`。卸载时不会把可编辑 state 当成可信 hash 来源；版本、全部 17 个 runtime 文件和卸载程序的路径/长度/hash，都必须逐项匹配卸载程序自身内嵌原始载荷及自身 EXE hash。
+安装时保存 `INSTALLER-OWNERSHIP.json`，并将同一安装器复制为 `Uninstall.exe`。卸载时不会把可编辑state当成可信hash来源；版本、全部19个runtime文件和卸载程序的路径/长度/hash，都必须逐项匹配卸载程序自身内嵌原始载荷及自身EXE hash。
 
-本开发清单比已发布 v0.3.0-preview 增加了 NotebookWorker。旧版的 16 文件所有权记录不能直接视为本版本的 17 文件记录；当前安装器不迁移这种记录，应先通过旧版自带卸载程序卸载，再安装新版本。已发布安装器和旧版卸载规则没有修改。
+本开发清单比已发布`v0.3.0-preview`增加了NotebookWorker、FanNativeWorker和WindowsBrightnessWorker。旧版16文件或先前开发17文件的所有权记录不能视为当前19文件记录；当前安装器不迁移这种记录，应先通过旧版自带卸载程序卸载，再安装新版本。已发布安装器和旧版卸载规则没有修改；更新清单不代表新Setup已经上传或完成实机安装验证。
+
+这些worker分别隔离移动SCI、受限只读Fan Xpert COM和手动Windows面板亮度。移动接口只准备10精确型号/6项受限设置，新增18个GearLink灯光PID未实机验证，Fan Xpert读取受权限/ABI限制且控制拒绝。安装不替使用者安装ASUS驱动/SDK，不授权设备写入，也不保证所有G-Helper功能、RGB设备或亮度provider可用。完整开发能力与限制见上级README和协议说明。
 
 卸载只针对固定 OpenAC 安装目录中的白名单文件。内容已修改的发行文件、未知文件和全部用户配置保留。快捷方式只有目标和参数都对应 OpenAC 时才删除；注册表条目只有产品标识与固定安装位置匹配时才删除。仅删除已知空目录，不使用递归删除。
 

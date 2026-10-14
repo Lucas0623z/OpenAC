@@ -1,17 +1,18 @@
 # G-Helper 功能对照：独立实现、保留 MIT
 
-核对日期：2026-10-13。目标版本固定为 [G-Helper e897b278bf809add90c904ba84aa2e451579dd0c](https://github.com/seerge/g-helper/tree/e897b278bf809add90c904ba84aa2e451579dd0c)，不是不断变化的主分支。该版本的 [许可证](https://github.com/seerge/g-helper/blob/e897b278bf809add90c904ba84aa2e451579dd0c/LICENSE) 是 GPL-3.0；OpenAC 保持 MIT，继续独立实现。下表只记录功能和接口事实，没有复制 G-Helper 的函数、曲线修正、自动切换算法、设备表、UI 或程序库。LGPL 库单独引用时仍需满足其条件；本轮没有引入它们。许可细节见 [OpenSourceInterfaces.md](OpenSourceInterfaces.md)。
+OpenAC状态核对日期：2026-10-14。比较的上游版本仍固定为 [G-Helper e897b278bf809add90c904ba84aa2e451579dd0c](https://github.com/seerge/g-helper/tree/e897b278bf809add90c904ba84aa2e451579dd0c)，不是不断变化的主分支。该版本的 [许可证](https://github.com/seerge/g-helper/blob/e897b278bf809add90c904ba84aa2e451579dd0c/LICENSE) 是 GPL-3.0；OpenAC 保持 MIT，继续独立实现。下表只记录功能和接口事实，没有复制 G-Helper 的函数、曲线修正、自动切换算法、设备表、UI 或程序库。LGPL 库单独引用时仍需满足其条件；本轮没有引入它们。许可细节见 [OpenSourceInterfaces.md](OpenSourceInterfaces.md)。
 
 这是固定版本的功能类别清单和当前缺口，不是“已经完全兼容”的宣传。表中的读路径存在，不代表本机有该硬件或已验证写入。原 Armoury 页面、官方产品目录、按钮、配置草稿和协议准备均不能代替实际能力检测。
 
 ## 状态和实现边界
 
 - **只读准备**：自有 worker 有严格读接口和纯测试；移动硬件尚未实机验证。部分 DSTS 只返回原始状态，不能证明当前配置。
+- **手动写接口准备**：独立代码、当前能力门禁及合成测试已存在；必须用户显式应用，不等于实物修改已验证。提交应答、配置读回和实体效果分别报告。
 - **局部实现**：自有代码已实现部分型号或不同设备上的相关功能，表内明确范围；不是整个 G-Helper 功能的替代。
 - **未实现**：没有完整执行路径；研究过接口也仍算未实现。
 - **当前不可读**：合法查询没有提供可信数据，或被权限/接口限制；保持未知。
 
-移动设备的当前精确准备型号只有 RC71L、RC72LA、RC73YA、RC73XA、GA402RJ、GU605MI、FX507ZC4。每次读请求重新核实 ASUS 身份、移动机箱类型、精确型号和已签名 System Control Interface 驱动。未确认型号不发送 ATKACPI IOCTL。工具页已接手动检测、超时隔离和未知状态显示；766 项 GUI 检查没有移动硬件调用。详情和 117 项工作进程纯测试见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。所有 NotebookWorker 写入均在 I/O 前拒绝；GUI 的实验性写入开关不会解除此限制。
+移动设备的当前精确准备型号共10个：RC71L、RC72LA、RC73YA、RC73XA、GA402RJ、GU605MI、FX507ZC4、FA507NV、GA403UI、GU605MZ。每次请求重新核实ASUS身份、移动机箱类型、精确型号和已签名System Control Interface驱动。未确认型号不发送ATKACPI IOCTL。工具页已接手动检测、超时隔离、过期状态退役及6项受限SCI设置：performanceMode、chargeLimit、keyboardBrightness、displayOverdrive、gpuEco、gpuMux。普通遥测不授权写入；需要新控制捕获、实际capability、当前会话及用户应用开关。模式/充电/GPU等只有提交未确认结果，不能把DSTS状态当当前配置；没有移动实机读写验证。详情见 [NotebookWorker-protocol.md](NotebookWorker-protocol.md)。
 
 下表中的“已有 SCI”指用户机器已安装的 ASUS System Control Interface 内核驱动，并非 OpenAC 自带或新安装驱动。正常 SCI/HID 接口是否允许普通用户访问取决于已有驱动 ACL；不能因为 G-Helper 可调用，就保证任何环境都无需权限。PawnIO 是另外的低层驱动路径，不能混为 SCI。
 
@@ -47,9 +48,9 @@
 
 | 功能 | 固定源接口事实 | OpenAC 当前状态与对应代码 | 依赖 / 尚缺内容 |
 |---|---|---|---|
-| BIOS 静音/平衡/增强 | A/M：PerformanceMode SCI | 只读准备：NotebookWorker `performanceMode`；原始 queryValue，不保证当前配置 | 已有 SCI，精确机型；模式 setter 未实现 |
+| BIOS 静音/平衡/增强 | A/M：PerformanceMode SCI | 手动写接口准备：`performanceMode`，0平衡/1增强/2静音；原始queryValue不作为当前配置 | 10精确型号及当前cap；增强要求已确认AC；提交结果未确认，无移动实机 |
 | 全速/手动/新增、命名、删除自定义模式 | A/F/M | 未实现；情境配置不等于 BIOS 模式 | 需独立模式存储、验证、恢复行为 |
-| CPU/GPU/第三风扇实时 RPM | A/H/F：对应 DSTS | 只读准备：`cpuFan/gpuFan/middleFan` | 七型号门禁；第三风扇不用于掌机；无移动实机 |
+| CPU/GPU/第三风扇实时 RPM | A/H/F：对应 DSTS | 只读准备：`cpuFan/gpuFan/middleFan` | 10精确型号门禁；第三风扇不用于掌机；无移动实机 |
 | 笔记本三路自定义风扇曲线 | A/F | 未实现；EURUX 曲线属于独立桌面控制器 | SCI/EC 曲线能力、有效节点、原曲线读回和恢复 |
 | 风扇滞后/响应时间 | A/F：FanHysteresis | 未实现 | 特定固件，不可套用 EURUX 参数 |
 | 每个模式的持续/慢速/快速功率限制 | A/F | 未实现 | 不同代际的 SPL/sPPT/fPPT、Intel PL1/PL2 不同 |
@@ -59,8 +60,8 @@
 | P/E 核开关及数量 | A/E | 未实现 | 特定 Intel SKU、最小/最大核数和重启条件 |
 | AMD Curve Optimizer / Undervolt | P/F | 未实现 | CPU 家族 SMU；PawnIO 模块/权限；没有电压写入 |
 | 低层 Intel 功耗/能量读写 | P | 未实现 | MSR 驱动/模块；不能用 WMI 标称值代替 |
-| GPU Eco/Standard | A/G | 只读准备：`gpuEco` 原始状态；切换未实现 | 已有 SCI；桌面 GPU 不适用该笔记本通路 |
-| GPU Ultimate / MUX | A/G | 只读准备：`gpuMux`；切换未实现 | 机型、外接显示、可能重启，不能只改一个布尔值 |
+| GPU Eco/Standard | A/G | 手动写接口准备：`gpuEco`，受限0/1提交；状态不当当前配置 | 关闭dGPU须确认hybrid MUX、无外屏及XGM未激活；完整迁移/异常恢复未实现，无实机 |
+| GPU Ultimate / MUX | A/G | 手动写接口准备：`gpuMux`，受限0/1提交 | 专显须确认dGPU开启、无外屏及XGM未激活；可能需用户重启，不自动关应用/重启；无实机 |
 | GPU Optimized、AC/电池自动切换 | G/M | 未实现 | 需要独立状态机、失败回滚、GPU占用判断 |
 | dGPU 使用进程列表、结束占用进程、异常恢复 | G/N | 未实现 | 需确认用户动作；不能拿未知 GPU 状态自动结束应用 |
 | NVIDIA 核心/显存偏移 | N/F | 未实现 | 已安装 NVIDIA 驱动；不能复制 GPL 调节函数 |
@@ -76,17 +77,17 @@
 | 功能 | 固定源 | OpenAC 当前状态与对应代码 | 依赖 / 尚缺内容 |
 |---|---|---|---|
 | 刷新率选择与 AC/电池自动刷新率 | S | 局部实现：WindowsDisplay + 工具页，真实屏幕/当前模式/整数候选、手动应用/读回/恢复 | 87后端+51界面纯检查；实机只读两屏，未修改；精确时序单独报告；分数值选择、内屏自动策略尚缺 |
-| Overdrive | A/S | 只读准备：`displayOverdrive` 原始状态 | 精确面板/固件；setter 未实现 |
+| Overdrive | A/S | 手动写接口准备：`displayOverdrive` 0/1 | 须另外读到支持面板端点；应答未当配置确认，移动面板未实机验证 |
 | MiniLED 单/多分区 | A/S | 未实现 | 两代不同 SCI 端点；普通 RGB/主板 LCD 不等价 |
-| 面板亮度 / 亮度快捷键 | S/I | 未实现 | 内屏 WMI/显示驱动；设备 LCD 亮度不等价 |
+| 面板亮度 / 亮度快捷键 | S/I | 局部实现：WindowsBrightness隔离WMI worker、真实支持级别、手动读取/应用及读回；30秒过期展示 | 无面板实写验证；仅一对一active provider，未猜GDI映射；未知完成后本次AppDomain禁再次写；全局快捷键未实现 |
 | Flicker-free dimming | V/S | 未实现 | 色彩处理/面板组合，需要独立视觉与范围验证 |
 | ELMB | S/E | 未实现 | 兼容 ASUS 内屏与协议 |
 | FHD 模式 / HDR 控制 / Optimal Brightness | A/S | 未实现 | 特定屏幕与固件，不可在桌面发送未知端点 |
 | GameVisual/Splendid、色域、白点、护眼 | V | 未实现 | 上游部分使用已安装 ASUS 工具；不能直接分发或执行来宣称自有实现 |
-| 电池充电上限 | A/H | 只读准备：`chargeLimit` 返回 nativeStatus | 不是确认的当前上限；setter 未实现 |
+| 电池充电上限 | A/H | 手动写接口准备：`chargeLimit` 整数40–100% | nativeStatus不是当前上限；应答只算提交未确认，不自动恢复；无移动实机 |
 | 电源适配器类型 | A/H | 只读准备：`chargerMode` | 已有 SCI；仅已证实状态语义 |
-| 电量、健康、设计/满充容量、充放电功率 | H | 局部实现：WindowsBattery + 工具页，Windows状态及可缺失WMI字段、单位/身份/未知值校验 | 351后端+758界面纯检查；本机无系统电池，不代表真实笔记本WMI provider已验；充电上限SCI setter仍缺 |
-| 笔记本键盘背光亮度 | A/L | 只读准备：`keyboardBrightness` | 0–3原始级别，仅笔记本门禁；写入未实现 |
+| 电量、健康、设计/满充容量、充放电功率 | H | 局部实现：WindowsBattery + 工具页，Windows状态及可缺失WMI字段、单位/身份/未知值校验 | 本机无系统电池，不代表真实笔记本WMI provider已验；SCI充电上限属于另一路径 |
+| 笔记本键盘背光亮度 | A/L | 手动写接口准备：`keyboardBrightness` 0–3，带0x80启用位；已定义当前值读回与同值不写规则 | 仅已准备笔记本/有效decoder；无移动实机，未扩展到全部RGB和掌机 |
 | 笔记本 RGB 模式/颜色/速度/动画 | L/A | 未实现；DirectAura 是桌面 USB 控制器 | ROG HID、TUF SCI、LampArray 是不同通路 |
 | 背光 AC/电池超时、开机/关机/睡眠策略 | L/E | 未实现 | 机型、Windows事件、状态恢复 |
 | AniMe Matrix 图像/GIF、时钟、文字、音频可视化 | AM | 未实现 | 精确矩阵布局、HID、流控；本项目主板 LCD JPEG 不是矩阵功能 |
@@ -96,10 +97,10 @@
 | ScreenPad/DUO 第二屏/亮度 | A/S/I | 未实现 | 双屏机型专用端点与实际显示器映射 |
 | 摄像头遮挡/LED、麦克风/静音 LED、启动音效 | A/E/I | 局部实现：Windows 音频端点音量/静音；机身 LED/启动音效未实现 | 系统音频静音不等于 ASUS LED 控制 |
 | 平板/帐篷/翻转/合盖状态与策略 | A/E | 未实现 | 兼容传感器/移动模式、Windows电源行为 |
-| Ally 控制器模式、背键组合与按键绑定 | AL/I | 未实现；四掌机型号只有只读 SCI 准备 | 掌机 HID 命令、完整映射/重置/重连；桌面宏不等价 |
+| Ally 控制器模式、背键组合与按键绑定 | AL/I | 未实现；四掌机只具备限定SCI身份/状态与个别受限设置准备 | 掌机HID命令、完整映射/重置/重连未实现；桌面宏不等价 |
 | PCIe ASPM、待机联网、休眠等待策略 | M/E | 未实现 | Windows 电源 API；需要当前配置、权限和恢复测试 |
 | ASUS 服务查看/停止、Keystone/额外服务策略 | E | 未实现 | 服务管理权限；OpenAC 没有停服务或修改原安装 |
-| 原始 ACPI 测试入口 | A/E | 有意不提供任意命令入口 | 无任意 endpoint/INIT/DEVS；逐个已证实接口独立实现 |
+| 原始 ACPI 测试入口 | A/E | 有意不提供任意命令入口 | 无任意endpoint/INIT；DEVS只接6项固定类型/范围/当前capability路径 |
 
 ## 监控、叠层、自动化和更新
 
@@ -127,14 +128,14 @@ G-Helper 这个固定版本包含多个各自的协议模型，不能只因为�
 | 鼠标 DPI 多档、颜色、X/Y、polling | PM | 局部实现：GearLinkWorker 的 Harpe II Extreme Edition20 精确协议 | 不覆盖 Chakram/Gladius/Keris/Pugio/Spatha/Strix/TUF/MD200 全部模型 |
 | Angle snapping/tuning、MotionSync、Lift-off | PM | 局部实现：现有 GearLink 精确已读字段/范围 | 只允许当前 capability；不能跨型号复制范围 |
 | 鼠标按键、shift层、自定义组合/启动动作 | PM | 局部实现：自有按键绑定 + MacroEngine；硬件宏/所有组合不完整 | 源布局/键值/命令和写后读回逐型号确认 |
-| 鼠标多灯区/动画/Aura同步 | PM | 局部准备：7546/7548 的 Logo 灯区 RGB getter/setter、软件模式读取及手动接管/交还；AuraSyncCoordinator 逐设备核实静态/关闭能力 | 本机只完成当前颜色读取，接管和颜色写入未实机验证；其他灯区/动画/型号仍缺 |
+| 鼠标多灯区/动画/Aura同步 | PM | 局部实现：7546/7548五种效果协议；Aura静态/关闭、共享相位统一颜色呼吸/闪烁/彩色循环；另6鼠标家族12PID静态/归属准备，含p722三灯区 | 无新增实写验证；全部区域先构造计划，partial停止；未知Windows所有权不自动关闭；逐LED彩虹/输入触发同步未实现 |
 | 鼠标 profile、电池、低电报警、休眠 | PM | 局部实现：当前精确设备 getter/setter准备 | 分别确认 RF/有线/接收器能力及实际数据 |
 | 鼠标恢复默认、校准、booster、旧代协议 | PM | 未实现全型号流程 | 校准/恢复不能由普通设置报文猜出 |
 | 外接键盘 profile、polling、低电/休眠 | PK | 局部实现：Azoth Extreme Edition20 的 GearLink 路径 | 未覆盖全部 Azoth/Claymore/Falchion/Scope/Flare/TUF 型号 |
-| 外接键盘 RGB模式/单键灯效/预览 | PK | 局部准备：精确7586/7588静态recipe协议、软件模式getter/接管/交还、严格失败恢复 | 本机静态GET仍FFAA拒绝；手动接管和颜色没有实写验证；单键布局/动画仍缺，不能套用GPL布局表 |
+| 外接键盘 RGB模式/单键灯效/预览 | PK | 局部准备：7586/7588静态recipe与归属；另3键盘家族6PID静态/归属；Aura统一颜色软件动画 | 本机7588静态GET曾FFAA拒绝；无新增实写验收；单键布局、原生全部动态效果、所有型号未实现 |
 | 外接键盘按键/组合/宏/启动程序 | PK | 局部实现：键映射 + 自有 MacroEngine | 硬件驻留宏、所有型号组合/恢复缺少验证 |
 | Azoth OLED 内容、亮度、KPS、lever | PK | 局部实现：GearLinkFeatures 精确现有 getter/setter | 自定义图片/GIF及所有 OLED 型号未实现；当前预设不等于任意上传 |
-| 耳机 battery、灯效、EQ与预设 | PH | 局部实现：DELTA II-KJP 电池/EQ等已证实 HID 字段；raw mode0颜色映射不明，effect/color禁用 | Cetra/Clavis/Pelta/StrixGo 等其他模型未完成 |
+| 耳机 battery、灯效、EQ与预设 | PH | 局部实现：DELTA II-KJP电池/EQ；LED已开时显式命名效果1–5替换；另7489四GET静态通道可显式LED启用→原recipe验证→Static1/RGB/亮度→完整读回，Aura必须false | raw0不被重命名为恒亮；两步非原子，partial/拒绝停止，无自动Aura退出/重试/恢复。无实写验证，Cetra/Clavis/Pelta等未完成 |
 | 耳机 sidetone、麦克风、噪声抑制、ANC | PH | 局部实现：当前设备 capability允许字段；Windows端点另行支持 | 模型独有 ANC/AdaptiveANC/Dirac 等不能虚构 |
 | 耳机 voice prompts、电源、低电警报、恢复 | PH | 局部实现：当前 getter/setter准备字段 | 不代表所有耳机具有这些开关；硬件 reset 尚缺 |
 | OMNI 接收器配对/拓扑与固件 | 外设模型/PM/PK | 局部实现：只读接收器发现/拓扑准备 | 配对写入、断开、更新的完整流程尚缺 |
@@ -148,12 +149,16 @@ G-Helper 这个固定版本包含多个各自的协议模型，不能只因为�
 | 主板 USB Aura | DirectAuraWorker 的9个精确 VID/PID 源准备、逻辑通道、4种已证实模式 | 不是笔记本/DRAM/VGA全生态；真实 ARGB 灯数、Gen1/Gen2仍未知 |
 | EURUX 风扇/灯效 | SDKWorker type32；4个控制器端口、PWM曲线/有校准范围时fixedRPM、201/202/104协议 | 不是 CPU/机箱/泵主板header；不做101校准；写后实物仍未验证 |
 | 主板 LCD51 | 7299/7124/7571源准备；电源/亮度/standby、8预设、JPEG上传/显式槽选择/删除、硬件监控配置 | 本型号 caps 禁自定义GIF；占用/空槽无getter；动画视频不能假接JPEG槽 |
-| 主板 Fan Xpert | FanModeWorker 已实现type50 GET0/1/12/13/16/17纯编码/严格解析及preset3草稿/门禁；84纯检查 | 已获管理员许可的独立 COM 只读探针枚举八个 header 与五个 profile；此探针不是 GUI 通路，RPM/单位仍未证明。GUI MainSDK runtime 断开；不初始化/校准/stress，不声称模式实际可用 |
+| 主板 Fan Xpert | FanModeWorker纯协议；新FanNativeWorker隔离只读COM、服务/签名/ABI前检，GUI仅显示成功读取的header名 | 私有管理员V2曾读8header/5profile；公共worker普通权限仍被阻挡，管理员扩展读在CurrentFanCurve ABI处拒绝，未得完整快照。RPM/单位/selector语义未确认，控制严格拒绝；不初始化/校准/stress |
 | 主板电压/温度/风扇遥测 | 新 TelemetryWorker 隔离GET0/36；原始数据保留且不猜单位/身份 | 本机五项全0；ASUSManagement普通WMI实例AccessDenied；未找到可确认共享内存schema |
 
 ## 验收办法：怎样才算补齐和更好
 
-每项新增能力需有精确身份、实际 capability、合法读路径、参数范围、失败/断开状态和可测的结果。无硬件的新增适配应标为源准备并禁用未验证写入；不能用 `fullSupported:true` 把缺口隐藏。模式/风扇/功率等应记录原设置、明确写应答和实际读回，不因应答成功就写“完成”。
+每项新增能力需有精确身份、实际capability、合法读路径、参数范围、失败/断开状态和可测的结果。无实机验收的适配标为源准备；未经接口及当前能力核对的写入必须拒绝，已准备的实验性写入仍须显式授权与会话校验，不能用`fullSupported:true`隐藏缺口。模式/风扇/功率等应区分原设置、写应答、配置读回及实体效果，不因应答成功就写“完成”。
+
+本轮反馈“灯控像假的”后，纯源码检查确认当前预览设备控制关闭且重建曾保留旧Aura可用卡片。现已补具体禁用原因、旧session/cap/result/ownership退役及强制重读；准备态显示“待验证”，首帧返回前不显示运行成功。合成检查证明这些本地规则，没有代替设备灯光实写验收。开发运行载荷现为9worker/19文件；已发布`v0.3.0-preview`没有被这些改动替换。
+
+新耳机scope的后续动画帧曾被旧color-only筛选过滤为空，已修为每相位保留完整static事务；全组空/null计划在输出前拒绝，不虚增帧数。111动画纯检查和379GUI检查包含不同相位实际fake请求、partial失败停止、首帧与旧会话状态。热更新只在同一preview进程保留用户本次开关的内存选择；重开程序关闭，磁盘状态不授权，也不自动应用设备设置。
 
 可比较的改进指标包括：启动和页切换时不在UI线程执行native调用；单次工作进程硬期限与崩溃隔离；轮询不并发堆积；超时不无限重启；设备断开后不保留旧值；每项数据注明真实来源/单位/采样时间；写失败后的恢复行为可重复验证。现有纯测试覆盖若干项，但没有完成与 G-Helper 的同机性能、功耗或长期稳定性比较，所以目前不宣称“整体比它好”。
 

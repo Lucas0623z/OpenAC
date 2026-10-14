@@ -30,6 +30,8 @@ internal static class InstallerTests {
             Check(InstallerCore.RuntimeFiles.Contains("OpenAC.exe") && InstallerCore.RuntimeFiles.Contains("OpenAC.exe.config"), "Missing public runtime executable names.");
             Check(!InstallerCore.RuntimeFiles.Contains("RogControl.exe"), "Legacy executable is still whitelisted.");
             Check(InstallerCore.RuntimeFiles.Contains("NotebookWorker.exe"), "Notebook GUI requires its isolated status worker in the installer.");
+            Check(InstallerCore.RuntimeFiles.Contains("FanNativeWorker.exe"), "The manual fan read requires its bounded x86 worker.");
+            Check(InstallerCore.RuntimeFiles.Contains("WindowsBrightnessWorker.exe"), "Brightness WMI must remain outside the GUI process.");
             Check(InstallerCore.DefaultDirectory == Path.Combine(InstallerCore.Programs, "OpenAC"), "Unexpected default directory.");
         });
         TestPaths();

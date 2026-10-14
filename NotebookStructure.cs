@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using RogControlNotebook;
 
 namespace RogControl {
  public sealed class NotebookGuiReply {
@@ -26,7 +27,7 @@ namespace RogControl {
   Task<NotebookGuiReply> Request(Dictionary<string,object> request);
   void Quarantine();
  }
- public sealed class NotebookWorkerGuiBackend:INotebookGuiBackend {
+ public sealed partial class NotebookWorkerGuiBackend:INotebookGuiBackend,INotebookGuiControlBackend {
   const string QuarantineKey="OpenAC.Notebook.StatusQuarantined.v1";
   const string RequestGateKey="OpenAC.Notebook.GuiRequestGate.v1";
   readonly WorkerClient client;
@@ -70,8 +71,9 @@ namespace RogControl {
   public string SupportReason {get;internal set;}
   public DateTime CapturedUtc {get;internal set;}
   public IList<NotebookGuiReading> Readings {get;internal set;}
+  public NotebookGuiControlCapture Controls {get;internal set;}
  }
- public sealed class NotebookGuiReader:IDisposable {
+ public sealed partial class NotebookGuiReader:IDisposable {
   readonly INotebookGuiBackend backend;
   readonly int deadlineMs;
   readonly SemaphoreSlim gate=new SemaphoreSlim(1,1);
@@ -86,10 +88,10 @@ namespace RogControl {
   static bool Prepared(IDictionary<string,object> data){
    if(!Flag(data,"eligibleForStatus",true)||!Flag(data,"identityReadConfirmed",true)||!Flag(data,"sourcePrepared",true)||!Flag(data,"interfaceDriverConfirmed",true))return false;
    string manufacturer=Regex.Replace(Text(data,"manufacturer").ToUpperInvariant(),"[^A-Z0-9]","");if(manufacturer!="ASUS"&&manufacturer!="ASUSTEKCOMPUTERINC")return false;
-   string[] codes={"RC71L","RC72LA","RC73YA","RC73XA","GA402RJ","GU605MI","FX507ZC4"};string code=Text(data,"modelCode"),model=Text(data,"model"),family=Text(data,"family");
+   string[] codes={"RC71L","RC72LA","RC73YA","RC73XA","GA402RJ","GA403UI","GU605MI","GU605MZ","FX507ZC4","FA507NV"};string code=Text(data,"modelCode"),model=Text(data,"model"),family=Text(data,"family");
    if(!codes.Contains(code,StringComparer.Ordinal)||!Regex.IsMatch(model,"(?<![A-Z0-9])"+Regex.Escape(code)+"(?![A-Z0-9])",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant))return false;
    if(codes.Count(c=>Regex.IsMatch(model,"(?<![A-Z0-9])"+Regex.Escape(c)+"(?![A-Z0-9])",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant))!=1)return false;
-   if(family!=(code.StartsWith("RC",StringComparison.Ordinal)?"handheld":code=="FX507ZC4"?"tufNotebook":"rogNotebook"))return false;
+   if(family!=NotebookControlRules.Family(code))return false;
    var chassis=Items(data,"chassisTypes");return chassis!=null&&chassis.Length>0&&chassis.Length<=32&&chassis.All(v=>{int? n=Integer(v);return n.HasValue&&new[]{8,9,10,11,14,30,31,32}.Contains(n.Value);});
   }
   static readonly string[] BasicFeatures={"cpuFan","gpuFan","cpuTemperature","gpuTemperature","chargerMode"};
@@ -133,7 +135,7 @@ namespace RogControl {
    if(!await gate.WaitAsync(0,cancel).ConfigureAwait(false))throw new NotebookGuiFailure("INTERFACE_BUSY",false);
    try{var scan=Parse((await Request(new Dictionary<string,object>{{"op","scan"}},cancel).ConfigureAwait(false)).data,true);if(!scan.EligibleForStatus)return scan;
     var read=Parse((await Request(new Dictionary<string,object>{{"op","read"},{"features",Features(scan.Family)}},cancel).ConfigureAwait(false)).data,false);
-    if(read.Manufacturer!=scan.Manufacturer||read.Model!=scan.Model||read.ModelCode!=scan.ModelCode||read.Family!=scan.Family)throw new NotebookGuiFailure("IDENTITY_CHANGED",false);return read;
+    if(read.Manufacturer!=scan.Manufacturer||read.Model!=scan.Model||read.ModelCode!=scan.ModelCode||read.Family!=scan.Family)throw new NotebookGuiFailure("IDENTITY_CHANGED",false);if(read.EligibleForStatus)await ReadControls(read,cancel).ConfigureAwait(false);return read;
    }finally{gate.Release();}
   }
   public void Dispose(){disposed=true;backend.Dispose();}
@@ -146,14 +148,14 @@ namespace RogControl {
   DispatcherTimer notebookStateExpiryTimer;
   bool notebookWaitingForRead;
   string notebookMessage="";
-  public bool NotebookReadBusy {get{return notebookReadTask!=null&&!notebookReadTask.IsCompleted;}}
-  public Task NotebookReadTask {get{return notebookReadTask;}}
+  public bool NotebookReadBusy {get{return notebookReadTask!=null&&!notebookReadTask.IsCompleted||notebookControlTask!=null&&!notebookControlTask.IsCompleted;}}
+  public Task NotebookReadTask {get{return notebookControlTask??(Task)notebookReadTask;}}
   public bool NotebookCanPreviewReload {get{return !NotebookReadBusy;}}
   public bool NotebookRestartRequired {get{return notebookReader.RestartRequired;}}
   static bool NotebookCurrent(DateTime capturedUtc,DateTime nowUtc){var age=nowUtc-capturedUtc;return age<TimeSpan.FromSeconds(30)&&age>=TimeSpan.FromSeconds(-5);}
   bool ExpireNotebookState(DateTime nowUtc){
    if(notebookSnapshot==null||!notebookSnapshot.EligibleForStatus||notebookWaitingForRead||NotebookCurrent(notebookSnapshot.CapturedUtc,nowUtc))return false;
-   notebookSnapshot.Readings=notebookSnapshot.Readings.Select(r=>new NotebookGuiReading{Feature=r.Feature,Caption=r.Caption,Text="—",Confirmed=false}).ToList();notebookWaitingForRead=true;return true;
+   notebookSnapshot.Readings=notebookSnapshot.Readings.Select(r=>new NotebookGuiReading{Feature=r.Feature,Caption=r.Caption,Text="—",Confirmed=false}).ToList();notebookSnapshot.Controls=null;notebookWaitingForRead=true;return true;
   }
   void BeginNotebookStateExpiry(){if(render)return;notebookStateExpiryTimer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(1)};notebookStateExpiryTimer.Tick+=(s,e)=>{if(closing){notebookStateExpiryTimer.Stop();return;}if(IsLoaded&&page=="笔记本与掌机")NotebookStateExpiryTick(DateTime.UtcNow);};notebookStateExpiryTimer.Start();}
   void NotebookStateExpiryTick(DateTime nowUtc){if(!closing&&ExpireNotebookState(nowUtc)&&page=="笔记本与掌机")ShowPage(page);}
@@ -167,7 +169,7 @@ namespace RogControl {
    var identity=Box("设备信息","");NotebookMetric(identity,"制造商",notebookSnapshot.Manufacturer.Length==0?"—":notebookSnapshot.Manufacturer);NotebookMetric(identity,"型号",notebookSnapshot.Model.Length==0?"—":notebookSnapshot.Model);content.Children.Add(Card(identity));
    if(!notebookSnapshot.EligibleForStatus){content.Children.Add(Paragraph(notebookSnapshot.IdentityConfirmed?"仅识别 · 暂不支持读取":"设备身份未确认",13,muted));return;}
    bool current=!notebookWaitingForRead&&NotebookCurrent(notebookSnapshot.CapturedUtc,DateTime.UtcNow);
-   var values=Box("状态","");if(!current||notebookSnapshot.Readings.Count==0){var pending=Paragraph("等待读取",13,muted);pending.ToolTip=notebookSnapshot.CapturedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'",CultureInfo.InvariantCulture);values.Children.Add(pending);}foreach(var value in notebookSnapshot.Readings)NotebookMetric(values,value.Caption,current&&value.Confirmed?value.Text:"—");content.Children.Add(Card(values));
+   var values=Box("状态","");if(!current||notebookSnapshot.Readings.Count==0){var pending=Paragraph("等待读取",13,muted);pending.ToolTip=notebookSnapshot.CapturedUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'",CultureInfo.InvariantCulture);values.Children.Add(pending);}foreach(var value in notebookSnapshot.Readings)NotebookMetric(values,value.Caption,current&&value.Confirmed?value.Text:"—");content.Children.Add(Card(values));AddNotebookControls(current);
   }
   void NotebookMetric(StackPanel parent,string caption,string value){var row=new Grid{Margin=new Thickness(0,7,0,7)};row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(180)});row.ColumnDefinitions.Add(new ColumnDefinition());row.Children.Add(Label(caption,13,muted));var detail=Paragraph(value,14,text);Grid.SetColumn(detail,1);row.Children.Add(detail);parent.Children.Add(row);}
   static string NotebookFailureText(Exception error){var typed=error as NotebookGuiFailure;string code=typed==null?"QUERY_FAILED":typed.Code;switch(code){case "QUERY_TIMEOUT":case "RESTART_REQUIRED":return "读取超时，请重新打开应用。";case "IDENTITY_CHANGED":return "设备已改变，请重新读取。";case "INTERFACE_BUSY":return "设备正在使用，请稍后读取。";case "CONNECTION_FAILED":case "INTERFACE_UNAVAILABLE":case "INTERFACE_QUERY_FAILED":return "设备连接失败，请重新读取。";case "INVALID_RESPONSE":return "设备响应未确认，请重新读取。";default:return "读取失败，请重新读取。";}}
@@ -177,6 +179,6 @@ namespace RogControl {
    if(render||closing||busy||pageReadRunning||NotebookReadBusy||NotebookRestartRequired)return;busy=true;
    try{notebookReadTask=notebookReader.ReadAsync(notebookCancellation.Token);if(page=="笔记本与掌机")ShowPage(page);var result=await notebookReadTask;if(!closing)SetNotebookRead(result);}catch(Exception error){if(!closing)NotebookReadFailed(error);}finally{notebookReadTask=null;busy=false;if(!closing&&page=="笔记本与掌机")ShowPage(page);}
   }
-  public async Task DisposeNotebookStatusAsync(){if(notebookStateExpiryTimer!=null)notebookStateExpiryTimer.Stop();notebookCancellation.Cancel();var pending=notebookReadTask;await Task.Run(()=>notebookReader.Dispose()).ConfigureAwait(false);if(pending!=null)try{await pending.ConfigureAwait(false);}catch{}}
+  public async Task DisposeNotebookStatusAsync(){if(notebookStateExpiryTimer!=null)notebookStateExpiryTimer.Stop();notebookCancellation.Cancel();var pending=NotebookReadTask;await Task.Run(()=>notebookReader.Dispose()).ConfigureAwait(false);if(pending!=null)try{await pending.ConfigureAwait(false);}catch{}}
  }
 }

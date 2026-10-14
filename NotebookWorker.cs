@@ -1,9 +1,10 @@
-// Independently written OpenAC read-only notebook adapter. See NotebookWorker-protocol.md.
+// Independently written OpenAC notebook adapter. See NotebookWorker-protocol.md.
 // G-Helper / Linux were consulted for interface facts; no application functions were copied.
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Management;
@@ -19,6 +20,7 @@ namespace RogControlNotebook {
   public string Manufacturer, Model;
   public int[] ChassisTypes = new int[0];
   public bool IdentityReadConfirmed, InterfaceDriverConfirmed;
+  public bool? AcOnline;
   public List<object> InterfaceDrivers = new List<object>();
  }
  public sealed class NotebookModel {
@@ -48,7 +50,10 @@ namespace RogControlNotebook {
    new NotebookModel("RC73XA","handheld","ROG Xbox Ally X (2025)","https://rog.asus.com/support/faq/1050220/"),
    new NotebookModel("GA402RJ","rogNotebook","ROG Zephyrus G14 (2022)","https://www.asus.com/supportonly/ga402rj/helpdesk_download/"),
    new NotebookModel("GU605MI","rogNotebook","ROG Zephyrus G16 (2024)","https://rog.asus.com/ru/laptops/rog-zephyrus/rog-zephyrus-g16-2024/spec/"),
-   new NotebookModel("FX507ZC4","tufNotebook","ASUS TUF Gaming F15", "https://www.asus.com/supportonly/fx507zc4/helpdesk_download/")
+   new NotebookModel("FX507ZC4","tufNotebook","ASUS TUF Gaming F15", "https://www.asus.com/supportonly/fx507zc4/helpdesk_download/"),
+   new NotebookModel("FA507NV","tufNotebook","ASUS TUF Gaming A15","https://www.asus.com/us/supportonly/fa507nv/helpdesk_download/"),
+   new NotebookModel("GA403UI","rogNotebook","ROG Zephyrus G14 (2024)","https://www.asus.com/us/supportonly/ga403ui/helpdesk_download/"),
+   new NotebookModel("GU605MZ","rogNotebook","ROG Zephyrus G16 (2024)","https://km-ap.asus.com/uploads/AttachLibrarys/8a53fc79-6a00-4a96-8408-a7e886967aef/20240506160932760_ASUS_System_Control_Interface_v3modellist.pdf")
   };
   static readonly NotebookFeature[] Features = {
    new NotebookFeature("cpuFan",0x00110013,"rpm","fanSpeed",0,120,100,false),
@@ -102,8 +107,8 @@ namespace RogControlNotebook {
    }
    return selected;
   }
-  public static bool AllowedEndpoint(uint endpoint) { foreach(var feature in Features)if(feature.Endpoint==endpoint)return true;return false; }
-  // Only DSTS is ever encoded. There is no method-ID or control-status input from JSON.
+  public static bool AllowedEndpoint(uint endpoint) { foreach(var feature in Features)if(feature.Endpoint==endpoint)return true;return NotebookControlRules.SupportEndpoint(endpoint); }
+  // No method-ID or endpoint input from JSON; DEVS has a separate fixed typed builder.
   public static byte[] StatusPacket(uint endpoint) {
    if(!AllowedEndpoint(endpoint))throw new NotebookError("INVALID_REQUEST","Endpoint is not on the status allowlist");
    byte[] packet=new byte[16];Put32(packet,0,0x53545344);Put32(packet,4,8);Put32(packet,8,endpoint);return packet;
@@ -120,7 +125,7 @@ namespace RogControlNotebook {
    if((raw&0xFFF80000)!=0){state["error"]="UNKNOWN_STATUS_FLAGS";return state;}
    state["presenceConfirmed"]=true;state["readbackConfirmed"]=true;
    int value=(int)(raw&0xFFFF);
-   if(feature.Name=="keyboardBrightness")value=(int)(raw&0xFF);
+   if(feature.Name=="keyboardBrightness"){value=(int)(raw&0x7F);if((raw&0x20000)!=0||(raw&0xFF00)>0x0300){state["error"]="BRIGHTNESS_UNKNOWN";return state;}}
    if(value<feature.Minimum||value>feature.Maximum){state["error"]="STATUS_VALUE_OUTSIDE_PREPARED_RANGE";return state;}
    state["queryValue"]=value;
    if(feature.Semantics!="nativeStatus") { state["value"]=checked(value*feature.Scale);state["valueReadbackConfirmed"]=true; }
@@ -134,26 +139,32 @@ namespace RogControlNotebook {
   public NotebookError(string code,string message):base(message){Code=code;}
  }
  public interface INotebookTransport:IDisposable { byte[] ReadStatus(uint endpoint); }
- public sealed class NotebookService {
+ public sealed partial class NotebookService {
   readonly Func<NotebookIdentity> identity;
   readonly Func<INotebookTransport> open;
   readonly int budgetMs;
+  readonly Func<long> clock;
+  long operationDeadline;
+  int executing;
   int quarantined;
   Thread operationThread;
   readonly JavaScriptSerializer json=new JavaScriptSerializer { MaxJsonLength=16384 };
   public bool RestartRequired { get { return Interlocked.CompareExchange(ref quarantined,0,0)!=0; } }
-  public NotebookService(Func<NotebookIdentity> identity,Func<INotebookTransport> open,int budgetMs) { this.identity=identity;this.open=open;this.budgetMs=budgetMs; }
-  void CheckUsable() { if(RestartRequired)throw new NotebookError("RESTART_REQUIRED","The timed out worker cannot be reused"); }
+  public NotebookService(Func<NotebookIdentity> identity,Func<INotebookTransport> open,int budgetMs,Func<long> clock=null) { if(identity==null||open==null||budgetMs<1||budgetMs>8000)throw new ArgumentException("Invalid notebook service configuration");this.identity=identity;this.open=open;this.budgetMs=budgetMs;var elapsed=Stopwatch.StartNew();this.clock=clock??(()=>elapsed.ElapsedMilliseconds); }
+  void CheckUsable() { if(RestartRequired)throw new NotebookError("RESTART_REQUIRED","The timed out worker cannot be reused");if(Interlocked.CompareExchange(ref executing,0,0)!=0&&clock()>=operationDeadline){Interlocked.Exchange(ref quarantined,1);throw new NotebookError("QUERY_TIMEOUT","Notebook operation exceeded its deadline");} }
   Dictionary<string,object> Snapshot(NotebookIdentity current,NotebookGate gate) {
    return NotebookRules.Obj("manufacturer",current==null?null:current.Manufacturer,"model",current==null?null:current.Model,"chassisTypes",current==null?new int[0]:current.ChassisTypes,"identityReadConfirmed",current!=null&&current.IdentityReadConfirmed,"interfaceDriverConfirmed",current!=null&&current.InterfaceDriverConfirmed,"interfaceDrivers",current==null?new List<object>():current.InterfaceDrivers,"modelCode",gate.Model==null?null:gate.Model.Code,"family",gate.Model==null?null:gate.Model.Family,"name",gate.Model==null?null:gate.Model.Name,"eligibleForStatus",gate.Eligible,"supportReason",gate.Reason,"sourcePrepared",gate.Model!=null,"hardwareReadValidated",false,"supportsWrite",false,"supportsFanCurve",false,"supportsPowerLimits",false,"supportsLedWrites",false,"capabilities",new object[0],"states",new object[0],"driverQueryPerformed",false,"identityScope","osReportedManufacturerModelChassis");
   }
   object Run(Dictionary<string,object> request,string op) {
    CheckUsable();
+   if(op=="controlRead"||op=="set")ValidateControlRequest(request,op);
    // Validate every caller field and feature before any WMI/driver I/O.
-   foreach(string key in request.Keys)if(key!="id"&&key!="op"&&!(op=="read"&&key=="features"))throw new NotebookError("INVALID_REQUEST","Unknown request field "+key);
+   if(op=="scan"||op=="read")foreach(string key in request.Keys)if(key!="id"&&key!="op"&&!(op=="read"&&key=="features"))throw new NotebookError("INVALID_REQUEST","Unknown request field "+key);
    object selection=null;if(request.ContainsKey("features")){selection=request["features"];if(selection==null)throw new NotebookError("INVALID_REQUEST","Explicit features must be an array");}
    var features=NotebookRules.Select(null,selection);
    CheckUsable();var current=identity();var gate=NotebookRules.Gate(current);var data=Snapshot(current,gate);
+   CheckUsable();if(op=="controlRead"||op=="set")return NotebookControlRun(request,op,current,gate,data);
+   controlLease=null;
    if(op=="scan"||!gate.Eligible)return data;
    features=NotebookRules.Select(gate.Model,selection);CheckUsable();
    var states=new List<object>();var capabilities=new List<object>();
@@ -170,10 +181,11 @@ namespace RogControlNotebook {
    data["states"]=states;data["capabilities"]=capabilities;data["driverQueryPerformed"]=true;data["driverQueryMethod"]="DSTS";return data;
   }
   object Bounded(Dictionary<string,object> request,string op) {
+   if(Interlocked.CompareExchange(ref executing,1,0)!=0)throw new NotebookError("INTERFACE_BUSY","Another notebook operation remains in progress");operationDeadline=clock()+budgetMs;
    object result=null;Exception error=null;
    // Synchronous vendor IOCTL may ignore cancellation. A timed out worker exits after replying.
    var done=new ManualResetEvent(false);
-   var thread=new Thread(delegate() { try { result=Run(request,op); } catch(Exception ex) { error=ex; } finally { done.Set(); } });thread.IsBackground=true;operationThread=thread;thread.Start();
+   var thread=new Thread(delegate() { try { result=Run(request,op); } catch(Exception ex) { error=ex; } finally { Interlocked.Exchange(ref executing,0);done.Set(); } });thread.IsBackground=true;operationThread=thread;thread.Start();
    if(!done.WaitOne(budgetMs)){Interlocked.Exchange(ref quarantined,1);throw new NotebookError("QUERY_TIMEOUT","Read exceeded the worker deadline; restart required");}
    done.Dispose();if(error!=null)throw error;return result;
   }
@@ -185,7 +197,7 @@ namespace RogControlNotebook {
     CheckUsable();if(line==null||line.Length>16384)throw new NotebookError("INVALID_REQUEST","Request is too large");
     var request=json.Deserialize<Dictionary<string,object>>(line);if(request==null)throw new NotebookError("INVALID_REQUEST","Request must be an object");
     request.TryGetValue("id",out id);object rawOp;string op=request.TryGetValue("op",out rawOp)?rawOp as string:null;
-    if(op!="scan"&&op!="read")throw new NotebookError("READ_ONLY","Only scan/read are implemented; device writes are not prepared");
+    if(op!="scan"&&op!="read"&&op!="controlRead"&&op!="set")throw new NotebookError("INVALID_REQUEST","Only fixed notebook operations are implemented");
     return json.Serialize(NotebookRules.Obj("id",id,"ok",true,"data",Bounded(request,op),"restartRequired",false));
    } catch(Exception ex) {
     var typed=ex as NotebookError;return json.Serialize(NotebookRules.Obj("id",id,"ok",false,"error",NotebookRules.Obj("code",typed==null?"QUERY_FAILED":typed.Code,"message",typed==null?"Notebook query failed ("+ex.GetType().Name+")":typed.Message),"restartRequired",RestartRequired));
@@ -193,6 +205,8 @@ namespace RogControlNotebook {
   }
  }
  public static class NotebookNativeIdentity {
+  [StructLayout(LayoutKind.Sequential)]struct PowerStatus {public byte AcLineStatus,BatteryFlag,BatteryPercent,SystemFlag;public uint Life,FullLife;}
+  [DllImport("kernel32.dll",SetLastError=true)][return:MarshalAs(UnmanagedType.Bool)]static extern bool GetSystemPowerStatus(out PowerStatus status);
   public static NotebookIdentity Read() {
    var result=new NotebookIdentity();
    using(var search=new ManagementObjectSearcher("root\\cimv2","SELECT Manufacturer,Model FROM Win32_ComputerSystem")) {
@@ -209,6 +223,7 @@ namespace RogControlNotebook {
    // Driver metadata is queried only on an ASUS mobile identity; it never opens ATKACPI.
    if(NotebookRules.IsAsus(result.Manufacturer)&&result.IdentityReadConfirmed) {
     bool mobile=result.ChassisTypes.Length>0;foreach(int c in result.ChassisTypes)if(c!=8&&c!=9&&c!=10&&c!=11&&c!=14&&c!=30&&c!=31&&c!=32)mobile=false;
+    if(mobile){PowerStatus power;if(GetSystemPowerStatus(out power)&&(power.AcLineStatus==0||power.AcLineStatus==1))result.AcOnline=power.AcLineStatus==1;}
     if(mobile)using(var search=new ManagementObjectSearcher("root\\cimv2","SELECT DeviceName,DriverVersion,DriverProviderName,IsSigned FROM Win32_PnPSignedDriver WHERE DeviceName='ASUS System Control Interface' OR DeviceName='ASUS System Control Interface V1' OR DeviceName='ASUS System Control Interface V3'")) {
      search.Options.Timeout=TimeSpan.FromSeconds(3);
      using(var rows=search.Get())foreach(ManagementObject row in rows)using(row){bool signed=row["IsSigned"] is bool&&(bool)row["IsSigned"];string provider=Convert.ToString(row["DriverProviderName"],CultureInfo.InvariantCulture);result.InterfaceDrivers.Add(NotebookRules.Obj("name",Convert.ToString(row["DeviceName"],CultureInfo.InvariantCulture),"version",Convert.ToString(row["DriverVersion"],CultureInfo.InvariantCulture),"provider",provider,"signed",signed));if(signed&&NotebookRules.IsAsus(provider))result.InterfaceDriverConfirmed=true;}
@@ -217,7 +232,7 @@ namespace RogControlNotebook {
    return result;
   }
  }
- public sealed class NotebookNativeTransport:INotebookTransport {
+ public sealed class NotebookNativeTransport:INotebookControlTransport {
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern SafeFileHandle CreateFile(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
   [DllImport("kernel32.dll",SetLastError=true)]static extern bool DeviceIoControl(SafeFileHandle handle,uint code,byte[] input,uint inputSize,byte[] output,uint outputSize,out uint returned,IntPtr overlapped);
   readonly SafeFileHandle handle;
@@ -229,7 +244,10 @@ namespace RogControlNotebook {
    }catch{if(handle!=null)handle.Dispose();if(owns)mutex.ReleaseMutex();mutex.Dispose();throw;}
   }
   public byte[] ReadStatus(uint endpoint) {
-   var input=NotebookRules.StatusPacket(endpoint);var output=new byte[16];uint returned;
+   return Invoke(NotebookRules.StatusPacket(endpoint));
+  }
+  public byte[] WriteControl(uint endpoint,uint parameter){return Invoke(NotebookControlRules.Packet(endpoint,parameter));}
+  byte[] Invoke(byte[] input){var output=new byte[16];uint returned;
    if(!DeviceIoControl(handle,0x0022240C,input,(uint)input.Length,output,(uint)output.Length,out returned,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error());
    if(returned<4||returned>16)throw new NotebookError("INVALID_RESPONSE","Driver did not return a valid status word");
    var actual=new byte[returned];Array.Copy(output,actual,(int)returned);return actual;

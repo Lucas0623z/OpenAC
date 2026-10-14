@@ -87,7 +87,25 @@
     "GearLinkMouseSensor.cs",
     "GearLinkMouseOperations.cs",
     "MouseCalibrationWorkflow.cs",
-    "DeviceHotplugStructure.cs"
+    "DeviceHotplugStructure.cs",
+    "AuraAnimation.cs",
+    "AuraAnimationLifecycle.cs",
+    "FanNativeProcessImage.cs",
+    "FanNativeRules.cs",
+    "FanNativeStructure.cs",
+    "FanNativeTransport.cs",
+    "FanNativeWorker.cs",
+    "GearLinkAuraFrames.cs",
+    "GearLinkLightingFamilies.cs",
+    "GearLinkLightingModelFacts.cs",
+    "GearLinkHeadsetLighting.cs",
+    "NotebookControl.cs",
+    "NotebookControlModel.cs",
+    "NotebookControlStructure.cs",
+    "SharedWriteBinding.cs",
+    "WindowsBrightness.cs",
+    "WindowsBrightnessStructure.cs",
+    "WindowsBrightnessWorker.cs"
   ],
   "buildFiles": [
     "app.manifest",
@@ -157,7 +175,21 @@
     "MouseSensorProtocolTests.cs",
     "MouseProtocolIntegrationTests.cs",
     "MouseCalibrationWorkflowTests.cs",
-    "DeviceHotplugTests.cs"
+    "DeviceHotplugTests.cs",
+    "AuraAnimationGuiTests.cs",
+    "AuraAnimationTests.cs",
+    "FanNativeGuiTests.cs",
+    "FanNativeMainSdkTests.cs",
+    "FanNativeTests.cs",
+    "GearLinkAuraFrameTests.cs",
+    "GearLinkLightingFamilyTests.cs",
+    "GearLinkHeadsetLightingTests.cs",
+    "HeadsetEffectReplacementTests.cs",
+    "NotebookControlGuiTests.cs",
+    "NotebookControlTests.cs",
+    "SharedWriteBoundaryTests.cs",
+    "WindowsBrightnessGuiTests.cs",
+    "WindowsBrightnessTests.cs"
   ],
   "documentationFiles": [
     "README.md",
@@ -196,7 +228,11 @@
     "WindowsDisplay-Implementation.md",
     "WindowsBattery-Implementation.md",
     "FanXpert-Interface-Research.md",
-    "Mouse-Feature-Implementation.md"
+    "Mouse-Feature-Implementation.md",
+    "FanNative-protocol.md",
+    "GearLinkLightingFamilies-protocol.md",
+    "GearLinkHeadsetLighting-protocol.md",
+    "WindowsBrightness-protocol.md"
   ],
   "metadataFileMappings": [
     {
@@ -223,7 +259,9 @@
     "PUBLIC-RELEASE.md",
     "LICENSE",
     "THIRD-PARTY-NOTICES.md",
-    "PROVENANCE.md"
+    "PROVENANCE.md",
+    "FanNativeWorker.exe",
+    "WindowsBrightnessWorker.exe"
   ],
   "excludedClasses": [
     "All PNG JPEG GIF BMP SVG screenshots and official images; no verified redistribution permission",
@@ -239,18 +277,20 @@
   "distributionForm": "free_open_source_and_unsigned_preview_installer",
   "repository": "https://github.com/Lucas0623z/OpenAC",
   "previewLimitations": [
-    "Unsigned installer baseline; actual installation/uninstallation not performed",
-    "Hardware setting modifications in this development phase tested with fake backends only; session writes default off",
-    "Fan Xpert native transport disconnected; all-device Aura, complete G-Helper functionality and all official hardware controls unfinished",
-    "Mobile SCI preparation covers seven exact models without mobile hardware verification; battery WMI provider not physically tested on this desktop"
+    "Unsigned preview installer; real installation/uninstallation not performed",
+    "New hardware setting paths tested with synthetic backends; bounded real lighting reads performed, with no new physical lamp writes",
+    "Fan Xpert has a manual bounded COM read path; curve ABI/units and actual motherboard fan control remain unresolved",
+    "All official device controls, all-device physically verified Aura and complete G-Helper functionality remain unfinished",
+    "Mobile SCI covers ten exact models and six fixed manual paths without mobile hardware validation; WMI brightness is a manual isolated path, not validated on a mobile panel",
+    "Eighteen additional lighting PIDs and the exact PID7489 compound static path are prepared; physical effect and continuous synchronization remain to be verified"
   ],
   "completedChecks": [
-    "Development core and GUI: 20299 synthetic checks in 59 suites passed with all workers and tests rebuilt, including a final two-case hotplug callback follow-up; no real setting writes or shown test windows",
-    "UI: actual installed Armoury Crate and mouse buttons/lighting/calibration/Zone reviewed on the 150% DPI desktop; 1180/1538/2560 hidden layouts checked where supported; remaining views and controls recorded in OriginalUiInventory.md",
-    "Live preview: seven staged workers, physical-size and data-only restoration, default-off writes, guarded active operations, startup/DPI transition snapshots and compiler-failure preservation",
-    "Real read-only: earlier Windows/NVIDIA telemetry, power and displays; approved bounded fan COM probe enumerated eight headers and five profiles without setters, without proving RPM or duty units",
-    "Unsigned local candidate only; public v0.3.0-preview Release unchanged; no real install/uninstall",
-    "Worker transport: strict UTF-8 framing and five known startup preambles checked with pure streams and mock processes; no global console encoding changes or Framework private-field reflection",
-    "Mouse: actual read-only sensor/FPS, calibration information/LOD and glass tracking; 411 fake workflow checks and 110 pure hotplug checks; no new setting or physical unplug validation"
+    "Expanded branch: 24678 synthetic checks in 74 reported suites passed in the final fresh build-all regression; no native setting writes or shown test windows",
+    "Current targeted checks include bounded workers, nine new lighting families, scoped headset replacement, shared write boundaries, notebook controls, fan read ABI, brightness and GUI lifecycle",
+    "Live preview source stages nine workers; display drafts, physical geometry and same-process explicit control choice survive reload; disk state never grants device control",
+    "Earlier actual Armoury Crate pages and 150-percent DPI layouts reviewed; remaining pages and controls recorded in OriginalUiInventory.md",
+    "Bounded real read-only lighting/ownership queries and approved fan COM getters performed; no new fan or lamp setting writes",
+    "Installer allowlist contains nineteen runtime files; 130 in-memory installer checks passed without real install/uninstall",
+    "Public v0.3.0-preview Release unchanged; current changes remain an unpublished development candidate"
   ]
 }

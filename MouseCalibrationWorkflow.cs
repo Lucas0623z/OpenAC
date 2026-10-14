@@ -35,7 +35,7 @@ namespace RogControl {
  // No operation can discover or silently restart a connection during a run.
  public static class MouseCalibrationCoordinator {
   public const int DeadlineMs=25000,TrialDeadlineMs=23000;
-  public static async Task<MouseCalibrationOutcome> Run(Func<Task<MouseCalibrationRecord>> read,Func<string,object,Task<MouseCalibrationRecord>> write,Func<bool> active,Func<bool> restoreAllowed,Func<long> movement,Func<int,Task> delay,Func<long> elapsed,Action<int> progress){
+  public static async Task<MouseCalibrationOutcome> Run(Func<Task<MouseCalibrationRecord>> read,Func<string,object,Task<MouseCalibrationRecord>> write,Func<bool> active,Func<bool> restoreAllowed,Func<long> movement,Func<int,Task> delay,Func<long> elapsed,Action<int> progress,Action beginRestore=null){
    var result=new MouseCalibrationOutcome();MouseCalibrationRecord original=null;
    Action demand=()=>{if(!active())throw new OperationCanceledException("校准已取消。");if(elapsed()>=TrialDeadlineMs)throw new TimeoutException("校准超时。");};
    try {
@@ -52,6 +52,7 @@ namespace RogControl {
    }catch(Exception e){result.Message=e.Message;}
    if(result.WriteAttempted&&original!=null&&original.Restorable){
     try {
+     if(beginRestore!=null)beginRestore();
      Action restoreDemand=()=>{if(!restoreAllowed())throw new InvalidOperationException("原设备连接已失效。");if(elapsed()>=DeadlineMs)throw new TimeoutException("恢复设置超时。");};
      restoreDemand();var current=await read();restoreDemand();if(!original.Preserved(current))throw new InvalidOperationException("其他校准参数已改变。");
      if(current.Mode!=255){restoreDemand();current=await write("mouseCalibrationMode",255);restoreDemand();if(!original.Preserved(current)||current.Mode!=255)throw new InvalidOperationException("恢复模式未确认。");}
@@ -69,7 +70,7 @@ namespace RogControl {
   Task mouseCalibrationWorkflowTask;long mouseCalibrationMovement;Point? mouseCalibrationLastPosition;
   void BeginMouseCalibrationInput(){MouseMove+=(s,e)=>{if(!mouseCalibrationWorkflowRunning)return;var point=e.GetPosition(this);if(!mouseCalibrationLastPosition.HasValue||point!=mouseCalibrationLastPosition.Value){mouseCalibrationMovement++;mouseCalibrationLastPosition=point;}};}
   bool MouseCalibrationMayStart(Dictionary<string,object> state){
-   object session;if(!HardwareWritesEnabled||busy||mouseCalibrationWorkflowRunning||!GearCanSet(state,"mouseCalibrationMode")||!CurrentGearReadSession("mouse",state,out session))return false;
+   object session;if(!HardwareWritesEnabled||busy||AuraSyncBusy||mouseCalibrationWorkflowRunning||!GearCanSet(state,"mouseCalibrationMode")||!CurrentGearReadSession("mouse",state,out session))return false;
    try{var record=new MouseCalibrationRecord(GearMap(state,"snapshot"));object pid;return state.TryGetValue("pid",out pid)&&pid is int&&(int)pid==record.ModelPid&&record.Restorable;}catch{return false;}
   }
   void CancelMouseCalibrationWorkflow(){mouseCalibrationCancel=true;}
@@ -81,19 +82,19 @@ namespace RogControl {
    mouseCalibrationWorkflowTask=RunMouseCalibrationWorkflow(state,session);await mouseCalibrationWorkflowTask;
   }
   async Task RunMouseCalibrationWorkflow(Dictionary<string,object> state,object session){
-   string id=OriginalStateText(state,"deviceId","");int pid=Convert.ToInt32(state["pid"]);var timer=Stopwatch.StartNew();
+   string id=OriginalStateText(state,"deviceId","");int pid=Convert.ToInt32(state["pid"]);var timer=Stopwatch.StartNew();bool restoring=false;
    Func<bool> alive=()=>{object bound;return !render&&hardwareControlPolicy.Enabled&&gearReadSessions.TryGetValue("mouse",out bound)&&Object.ReferenceEquals(bound,session)&&Object.ReferenceEquals(session,gearWorker.SessionIdentity);};
    Func<Dictionary<string,object>,Task<MouseCalibrationRecord>> request=async command=>{
     if(!alive())throw new InvalidOperationException("原设备连接已失效，请重新读取。");
     int remaining=MouseCalibrationCoordinator.DeadlineMs-(int)timer.ElapsedMilliseconds;if(remaining<=0)throw new TimeoutException("校准超时。");
     command["kind"]="mouse";command["deviceId"]=id;
-    var reply=await gearWorker.Request<SdkReply>(command,session,Math.Min(4000,remaining));if(!alive()||reply==null||!reply.ok||reply.data==null||!GearOnline(reply.data)||OriginalStateText(reply.data,"deviceId","")!=id||!reply.data.ContainsKey("pid")||Convert.ToInt32(reply.data["pid"])!=pid)throw new InvalidOperationException(reply==null?"设备没有返回校准数据。":SdkError(reply.error));
+    var reply=await gearWorker.Request<SdkReply>(command,session,Math.Min(4000,remaining),()=>{if(!alive())throw new InvalidOperationException("原设备连接已失效，没有发送校准命令。");if(!restoring&&(closing||mouseCalibrationCancel))throw new OperationCanceledException("校准已取消。");if(timer.ElapsedMilliseconds>=(restoring?MouseCalibrationCoordinator.DeadlineMs:MouseCalibrationCoordinator.TrialDeadlineMs))throw new TimeoutException("校准命令已超时，没有发送。");});if(!alive()||reply==null||!reply.ok||reply.data==null||!GearOnline(reply.data)||OriginalStateText(reply.data,"deviceId","")!=id||!reply.data.ContainsKey("pid")||Convert.ToInt32(reply.data["pid"])!=pid)throw new InvalidOperationException(reply==null?"设备没有返回校准数据。":SdkError(reply.error));
     if(command["op"].ToString()=="calibrationSet"&&OriginalStateFlag(reply.data,"writeConfirmed")!=true)throw new InvalidOperationException("校准设置未确认，请重新读取。");
     var record=new MouseCalibrationRecord(GearMap(reply.data,"snapshot"));if(record.ModelPid!=pid)throw new InvalidOperationException("校准回读型号不一致。");return record;
    };
    try {
     ShowPage(page);
-    var outcome=await MouseCalibrationCoordinator.Run(()=>request(new Dictionary<string,object>{{"op","calibrationRead"}}),(setting,value)=>request(new Dictionary<string,object>{{"op","calibrationSet"},{"setting",setting},{"value",value},{"experimental",true}}),()=>alive()&&!closing&&!mouseCalibrationCancel,alive,()=>mouseCalibrationMovement,async milliseconds=>{var wait=Stopwatch.StartNew();while(wait.ElapsedMilliseconds<milliseconds){if(mouseCalibrationCancel||closing)break;await Task.Delay(Math.Min(50,milliseconds-(int)wait.ElapsedMilliseconds));}},()=>timer.ElapsedMilliseconds,level=>{status.Text="校准中…";});
+    var outcome=await MouseCalibrationCoordinator.Run(()=>request(new Dictionary<string,object>{{"op","calibrationRead"}}),(setting,value)=>request(new Dictionary<string,object>{{"op","calibrationSet"},{"setting",setting},{"value",value},{"experimental",true}}),()=>alive()&&!closing&&!mouseCalibrationCancel,alive,()=>mouseCalibrationMovement,async milliseconds=>{var wait=Stopwatch.StartNew();while(wait.ElapsedMilliseconds<milliseconds){if(mouseCalibrationCancel||closing)break;await Task.Delay(Math.Min(50,milliseconds-(int)wait.ElapsedMilliseconds));}},()=>timer.ElapsedMilliseconds,level=>{status.Text="校准中…";},()=>restoring=true);
     Log(outcome.Message);status.ToolTip=outcome.WriteAttempted&&!outcome.Completed?(outcome.Restored?"已恢复校准前的设置。":"请重新读取并检查当前校准设置。"):null;
    }catch(Exception e){Log("校准未完成："+e.Message);}
    finally {mouseCalibrationWorkflowRunning=false;busy=false;gearStates.Remove("mouse");gearReadSessions.Remove("mouse");pageReadAttempts.Remove("device:mouse");if(!closing)ShowPage(page);}

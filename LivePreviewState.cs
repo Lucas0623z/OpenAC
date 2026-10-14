@@ -69,7 +69,7 @@ namespace RogControl {
     try{string directory=System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".preview");string path=System.IO.Path.Combine(directory,"resume.json"),temporary=path+".new";System.IO.File.WriteAllText(temporary,CapturePreviewState(),new System.Text.UTF8Encoding(false));if(System.IO.File.Exists(path))System.IO.File.Replace(temporary,path,null);else System.IO.File.Move(temporary,path);}catch{}
    };previewStateTimer.Start();
   }
-  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&DeviceHotplugCanPreviewReload&&NotebookCanPreviewReload&&!mousePerformanceApplying&&MouseButtonsCanPreviewReload&&!mouseLightingApplying&&!mouseZoneApplying&&!mouseCalibrationApplying&&!mouseCalibrationWorkflowRunning&&!keyboardViewsApplying&&!monitorBusy&&!controlling&&!AuraSyncBusy&&!AuraSyncConnectionsActive&&!windowsSystemWriting&&windowsPowerUndo==null&&windowsDisplayUndo==null&&(windowsSystemTask==null||windowsSystemTask.IsCompleted)&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
+  public bool CanPreviewReload {get{var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;return !closing&&!busy&&AuraAnimationCanPreviewReload&&FanNativeCanPreviewReload&&WindowsBrightnessCanPreviewReload&&DeviceHotplugCanPreviewReload&&NotebookCanPreviewReload&&!mousePerformanceApplying&&MouseButtonsCanPreviewReload&&!mouseLightingApplying&&!mouseZoneApplying&&!mouseCalibrationApplying&&!mouseCalibrationWorkflowRunning&&!keyboardViewsApplying&&!monitorBusy&&!controlling&&!AuraSyncBusy&&!AuraSyncConnectionsActive&&!windowsSystemWriting&&windowsPowerUndo==null&&windowsDisplayUndo==null&&(windowsSystemTask==null||windowsSystemTask.IsCompleted)&&!pageReadRunning&&!openAcUpdateChecking&&!asusCatalogChecking&&!MacroFeaturesActive&&!ScenarioFeaturesActive&&OwnedWindows.Count==0&&(handle==IntPtr.Zero||PreviewWindowEnabled(handle));}}
   [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="IsWindowEnabled")][return:System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]static extern bool PreviewWindowEnabled(IntPtr handle);
   public string PreviewPage {get{return page;}}
   public bool PreviewHardwareWritesEnabled {get{return HardwareWritesEnabled||experimentalLighting;}}
@@ -123,17 +123,21 @@ namespace RogControl {
    lcdMonitorBackground=state.LcdMonitorBackground>=8&&state.LcdMonitorBackground<=11?state.LcdMonitorBackground:8;int lcdMaximum=lcdMonitorBackground==11?5:3;lcdMonitorInfoCount=state.LcdMonitorInfoCount>=1&&state.LcdMonitorInfoCount<=lcdMaximum?state.LcdMonitorInfoCount:1;
    CopyPreviewMap(firmwareCatalogs,state.FirmwareCatalogs);CopyPreviewMap(firmwareMessages,state.FirmwareMessages);
    asusCatalog=state.AsusCatalog;if(state.AsusCatalogOsId>0&&state.AsusCatalogOsId<=1000)asusCatalogOsId=state.AsusCatalogOsId;asusCatalogMessage=state.AsusCatalogMessage??"";
-   auraSyncTargets.Clear();if(state.AuraSyncTargets!=null)auraSyncTargets.AddRange(state.AuraSyncTargets);
+   auraSyncTargets.Clear();if(state.AuraSyncTargets!=null)auraSyncTargets.AddRange(state.AuraSyncTargets.Where(target=>target!=null));
    auraSyncSelected.Clear();foreach(string id in state.AuraSyncSelected??new string[0])if(auraSyncTargets.Exists(target=>target!=null&&target.Id==id&&target.CanStaticRgb&&target.Online))auraSyncSelected.Add(id);
-   auraSyncResult=state.AuraSyncResult;auraSyncMessage=state.AuraSyncMessage??"";
-   auraOwnershipResults.Clear();if(state.AuraOwnershipResults!=null)foreach(var pair in state.AuraOwnershipResults)if(pair.Value!=null&&pair.Value.Target!=null&&pair.Value.Target.Id==pair.Key)auraOwnershipResults[pair.Key]=pair.Value;
+   // Saved rows are a view draft, never a live connection or an ownership
+   // receipt. A fresh worker must read the device before the UI offers writes.
+   foreach(var target in auraSyncTargets){target.WorkerSession=null;target.CanStaticRgb=false;target.CanReleaseSoftwareLighting=false;target.PhysicalWriteValidated=false;if(target.Backend=="direct"||target.Backend=="gear")target.UnavailableReason="灯控连接已更新，等待重新读取设备。";}
+   auraSyncResult=null;auraSyncMessage=auraSyncTargets.Count==0?"":"等待重新读取灯控设备。";
+   auraOwnershipResults.Clear();pageReadAttempts.Remove("灯效 & Aura Sync");pageReadAttempts.Remove("神光同步");
    windowsPowerDraftScheme=state.WindowsPowerDraftScheme;windowsPowerDraftAc=state.WindowsPowerDraftAc;windowsPowerDraftDc=state.WindowsPowerDraftDc;windowsPowerRestoredDraft=state.Page=="Windows 电源";
    CopyPreviewMap(windowsDisplayDraft,state.WindowsDisplayDraft);RestoreMousePerformanceDraft(state.MousePerformanceDraft);RestoreKeyboardViewsDraft(state.KeyboardViewsDraft);RestoreGearPowerDrafts(state.GearPowerDrafts);RestoreGearPowerVoiceDraft(state.GearPowerVoiceDraft);gearPowerVoiceExpanded=state.GearPowerVoiceExpanded;
    Size restorePixelSize;if(OriginalPixelSizing.TryRestore(state.LayoutVersion,state.Width,state.Height,state.WidthPixels,state.HeightPixels,out restorePixelSize))SetOriginalPixelTarget(restorePixelSize.Width,restorePixelSize.Height);
    if(FinitePreviewNumber(state.Left)&&FinitePreviewNumber(state.Top)){WindowStartupLocation=WindowStartupLocation.Manual;Left=state.Left;Top=state.Top;}
    if(state.Maximized)WindowState=WindowState.Maximized;
-   // Permission stays disabled in the new instance; a refresh never reapplies
-   // settings or resumes a macro, animation, or scenario.
+   // No permission is loaded from this file. A same-host live reload may keep
+   // its existing in-memory session choice; it never reapplies settings or
+   // resumes a macro, animation, or scenario.
    ShowPage(state.Page??"控制面板");
    Action restoreScroll=()=>{var scroll=pageScroll;if(scroll!=null&&FinitePreviewNumber(state.ScrollOffset))scroll.ScrollToVerticalOffset(state.ScrollOffset);};
    if(IsLoaded)Dispatcher.BeginInvoke(restoreScroll,System.Windows.Threading.DispatcherPriority.Loaded);else Loaded+=(s,e)=>restoreScroll();

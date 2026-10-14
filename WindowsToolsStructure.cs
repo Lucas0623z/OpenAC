@@ -26,7 +26,7 @@ namespace RogControl {
   uint? windowsPowerDraftAc,windowsPowerDraftDc;
   bool windowsPowerRestoredDraft;
   static readonly string[] WindowsBoostNames={"禁用","启用","积极","高效启用","高效积极","保证频率以上积极","保证频率以上高效积极"};
-  void InitializeWindowsTools(){InitializeWindowsDisplay();windowsPowerService=new WindowsPowerService(new SessionPowerBackend(()=>{hardwareControlPolicy.Demand();if(render||closing&&!windowsSystemWriting)throw new InvalidOperationException("设置操作已结束。");}));}
+  void InitializeWindowsTools(){InitializeWindowsDisplay();InitializeWindowsBrightness();windowsPowerService=new WindowsPowerService(new SessionPowerBackend(()=>{hardwareControlPolicy.Demand();if(render||closing&&!windowsSystemWriting)throw new InvalidOperationException("设置操作已结束。");}));}
   async Task WaitWindowsToolsAsync(){var task=windowsSystemTask;if(task!=null)try{await task;}catch{}}
   void OriginalWindowsPowerPage(){
    Header("Windows 电源","");

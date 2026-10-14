@@ -40,7 +40,7 @@ internal static class NotebookWorkerTests {
   var unsigned=Identity("GU605MI",10);unsigned.InterfaceDriverConfirmed=false;Assert(!NotebookRules.Gate(unsigned).Eligible,"unconfirmed ASUS driver");
   var service=Ready();var scan=Reply(service,Obj("id","scan-1","op","scan"));Assert(Ok(scan)&&identityCalls==1&&opens==0&&reads==0,"scan reads identity only");Assert((string)scan["id"]=="scan-1"&&!(bool)Data(scan)["supportsWrite"]&&!(bool)Data(scan)["hardwareReadValidated"],"identity is not physical status validation");
   var read=Reply(service,Obj("id",2,"op","read","features",new[]{"cpuFan","gpuFan"}));Assert(Ok(read)&&reads==2&&opens==1&&disposals==1,"limited two-feature read and dispose");var states=(IList)Data(read)["states"];Assert(states.Count==2&&(int)((Dictionary<string,object>)states[0])["value"]==3300,"RPM conversion is 100 per native unit");
-  Rejected(service,Obj("id",3,"op","set","setting","chargeLimit","value",80),"all device writes");
+  Rejected(service,Obj("id",3,"op","set","setting","chargeLimit","value",80),"writes without explicit permission and a fresh control capture");
   foreach(string op in new[]{"init","watchdog","devs","calibrate","firmware","subscribe","shutdown",""})Rejected(service,Obj("op",op),"nonread op "+op);
   Rejected(service,Obj("op","read","deviceId",0x00120057),"caller endpoint override");
   Rejected(service,Obj("op","read","methodId",0x53564544),"caller method override");
@@ -60,6 +60,9 @@ internal static class NotebookWorkerTests {
   var limit=State("chargeLimit",0x10050);Assert((int)limit["queryValue"]==80&&limit["value"]==null&&!(bool)limit["valueReadbackConfirmed"],"charge status not asserted current charge setting");
   var mode=State("performanceMode",0x10001);Assert((int)mode["queryValue"]==1&&mode["value"]==null,"performance status not asserted current BIOS mode");
   var keyboard=State("keyboardBrightness",0x10302);Assert((int)keyboard["value"]==2,"brightness low byte independent of maximum byte");
+  Assert((int)State("keyboardBrightness",0x10380)["value"]==0,"brightness on bit is not added to a confirmed zero level");
+  Assert((int)State("keyboardBrightness",0x10382)["value"]==2,"brightness on bit is not added to current level");
+  Assert(State("keyboardBrightness",0x30382)["value"]==null,"ambiguous keyboard status bit stays unknown");
   foreach(byte[] bytes in new[]{new byte[0],new byte[3],new byte[17]})Assert(!(bool)NotebookRules.Decode(NotebookRules.Select(null,new[]{"cpuFan"})[0],bytes)["readbackConfirmed"],"invalid response size");
   Assert(!(bool)NotebookRules.Decode(NotebookRules.Select(null,new[]{"cpuFan"})[0],null)["readbackConfirmed"],"null driver response");
   bool forbidden=false;try{NotebookRules.StatusPacket(0x00110024);}catch(NotebookError){forbidden=true;}Assert(forbidden,"fan curve and arbitrary endpoints never encoded");

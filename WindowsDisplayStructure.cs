@@ -15,6 +15,7 @@ namespace RogControl {
     rates.SelectionChanged+=(s,e)=>{var item=rates.SelectedItem as ComboBoxItem;if(!busy&&item!=null)windowsDisplayDraft[current.Id]=(uint)item.Tag;};box.Children.Add(rates);var apply=Button("应用刷新率",async()=>await ChangeWindowsDisplay(current),true);apply.IsEnabled=HardwareWritesEnabled&&!busy&&screen.ManualRefreshSupported&&windowsDisplayUndo==null;box.Children.Add(apply);
     if(!String.IsNullOrEmpty(screen.Error)){var state=Paragraph("设置不可用",12,muted);state.ToolTip=screen.Error;box.Children.Add(state);}content.Children.Add(Card(box));
    }
+   AddWindowsBrightnessControls();
    if(windowsDisplayUndo!=null){var undo=Row();var restore=Button("恢复修改前的刷新率",async()=>await RestoreWindowsDisplay());restore.IsEnabled=HardwareWritesEnabled&&!busy;undo.Children.Add(restore);var keep=Button("保留当前刷新率",()=>{windowsDisplayUndo=null;windowsDisplayMessage="已保留当前刷新率。";ShowPage(page);});keep.IsEnabled=!busy;undo.Children.Add(keep);content.Children.Add(undo);}
    if(!String.IsNullOrEmpty(windowsDisplayMessage))content.Children.Add(Paragraph(windowsDisplayMessage,13,muted));
   }

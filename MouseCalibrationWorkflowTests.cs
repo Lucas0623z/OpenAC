@@ -38,7 +38,7 @@ public static class MouseCalibrationWorkflowTests {
   public Task Delay(int milliseconds){Check(milliseconds==2000,"real per-trial sensing interval remains 2000ms");Delays++;Clock+=milliseconds;if(MoveDuringWait)Movement++;if(DuringDelay!=null)DuringDelay(this);return Task.FromResult(0);}
   public long Motion(){if(OnMovement!=null)OnMovement(this);return Movement;}
   public void Report(int level){Progress.Add(level);if(OnProgress!=null)OnProgress(this,level);}
-  public MouseCalibrationOutcome Run(){return MouseCalibrationCoordinator.Run(Read,Write,Active,RestoreAllowed,Motion,Delay,()=>Clock,Report).GetAwaiter().GetResult();}
+  public MouseCalibrationOutcome Run(Action beginRestore=null){return MouseCalibrationCoordinator.Run(Read,Write,Active,RestoreAllowed,Motion,Delay,()=>Clock,Report,beginRestore).GetAwaiter().GetResult();}
   public int TrialWrites(){return Commands.Count(item=>item.Key=="mouseCalibrationLOD"&&(int)item.Value["lodMode"]==2&&(int)item.Value["manualCalibrationLOD"]>=1);}
  }
  static void Success(){
@@ -81,6 +81,9 @@ public static class MouseCalibrationWorkflowTests {
   var malformedSet=new Fake{AfterWrite=f=>{if(f.Writes==2)Lod(f.Data)["manualCalibrationLOD"]=11;}};outcome=malformedSet.Run();Check(!outcome.Completed&&outcome.Restored&&malformedSet.Delays==0,"wrong returned trial level is rejected before movement sensing");
  }
  static void Records(){
+  int restorationPhases=0;var recovering=new Fake{MoveDuringWait=false};var recovered=recovering.Run(()=>restorationPhases++);Check(recovered.Restored&&restorationPhases==1,"transport changes to restoration validation once after a failed trial");
+  restorationPhases=0;var successful=new Fake();Check(successful.Run(()=>restorationPhases++).Completed&&restorationPhases==0,"successful trials never authorize the restoration lane");
+  var deniedRecovery=new Fake{MoveDuringWait=false};var denied=deniedRecovery.Run(()=>{throw new InvalidOperationException("restore transport unavailable");});Check(!denied.Restored&&deniedRecovery.Reads==1&&deniedRecovery.Writes==2,"restoration transition failure emits no recovery device delegates");
   var source=Snapshot();var original=new MouseCalibrationRecord(source);((int[])Info(source)["kValue"])[0]=200;Check(original.Preserved(new MouseCalibrationRecord(Snapshot())),"record owns a cloned calibration recipe");var submitted=original.LodValue(2,5);submitted["normalModeLOD"]=2;submitted["asymmetricLiftValue"]=11;Check(original.Normal==1&&original.Lift==6&&original.Preserved(new MouseCalibrationRecord(Snapshot())),"mutable submitted dictionary cannot mutate original restoration recipe");
   Check(!original.Same(new MouseCalibrationRecord(Snapshot(7546))),"different exact transport model cannot masquerade as same record");
   foreach(int mode in new[]{0,1,2}){var data=Snapshot(lodMode:mode);Check(new MouseCalibrationRecord(data).Restorable,"valid baseline for each LOD mode");}

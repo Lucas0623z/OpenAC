@@ -14,7 +14,10 @@ The previously working window remains visible if compilation or constructing
 the next page fails. The host delays replacement while a device request, macro,
 scenario, update query, running Aura animation, or modal dialog is active.
 Refreshing does not reapply hardware configuration or resume input playback.
-The hardware-control permission is reset in each new window.
+Ordinary program/host startup starts with hardware control off. A live preview
+replacement inside the same process retains only the user's explicit current
+session switch in AppDomain memory; it never loads permission from resume.json,
+profiles or disk. Render-only windows cannot inherit this grant.
 
 Adapters run from a separate `.preview/runtime-<generation>` folder, so rebuilding the normal adapter outputs
 does not conflict with a live worker's executable lock. Changed adapter binaries
@@ -37,8 +40,12 @@ the page and tabs across such a host restart; cached update links are revalidate
 .NET Framework retains loaded assemblies until the host exits, so long preview
 sessions can use more memory; restarting the preview releases those assemblies.
 
-This phase also preserves Aura snapshots/selections and Windows power/display
-drafts as data. Applying settings rechecks their real current state. A running
+This phase preserves Aura rows and selected IDs only as view drafts, together
+with Windows power/display drafts. Restored Aura rows lose worker sessions,
+writable/ownership capabilities, physical-validation flags, prior success and
+ownership receipts. Aura read throttles are cleared so a fresh read can be queued.
+They display “待读取” until the new session reads them; saved IDs alone cannot
+enable Apply. Applying settings rechecks their real current state. A running
 monitor read delays replacement; expired readings are hidden while waiting.
 Windows restore points belong to their live controller instance: preview waits
 until the user explicitly keeps or restores that change. Closing does not
@@ -50,7 +57,10 @@ provider query. Battery snapshots expire after 30 seconds and ordinary monitor
 readings after 15 seconds. Developer-only `.preview/assets.json` can point
 `productImageRoot` at existing official PNGs; that path and the images are private.
 
-The host now stages seven workers, including NotebookWorker. `-StartInactive`
+The host now stages nine workers: DirectAura, GearLink, SDK, Storage,
+AudioEndpoint, Discovery, Notebook, FanNative and WindowsBrightness. The current
+installer/runtime allowlist has 19 files; the published v0.3.0-preview artifacts
+have not been replaced by these development changes. `-StartInactive`
 opens the restored preview without asking WPF to activate it. Changed host code
 still requires a normal host restart. A single-instance mutex prevents two live
 hosts from editing the shared preview state.
@@ -65,7 +75,7 @@ scrolling body, while overflowing device tabs scroll horizontally.
 
 Keyboard OLED/lever, mouse performance, and power-setting drafts travel as data
 only. Active applies delay replacement; restored drafts must still match the
-device and supported range. Hardware permission is never restored. Notebook
+device and supported range. No disk/profile state grants hardware permission. Notebook
 queries are manual, single-batch, bounded and quarantined on timeout; the expiry
 timer only removes stale display values. Cached firmware checks and headset
 subpages also survive replacement without starting queries or updates.
@@ -84,8 +94,8 @@ read replaces the old cache. All gear SET requests use the precise current
 snapshot and a live worker-session token inside the request queue; an expired
 read cannot restart another worker to send its draft. Tab-specific read keys keep
 same-page redraws from replacing current dirty drafts, while returning to a tab
-or losing its process still permits a fresh read. No control permission or active
-apply is transferred.
+or losing its process still permits a fresh read. No control permission is
+serialized with drafts, and no active apply is transferred.
 
 Worker requests use explicit UTF-8 bytes. Their shared input reader handles only
 known stream-start preambles from Framework process startup, then decodes every
@@ -96,5 +106,38 @@ seen during the full regression run.
 
 The settings popup keeps single-field actions separate; its unimplemented aggregate
 Save, warning and sleeping-wallpaper controls remain disabled.
+
+The device-control switch starts off when the application or preview host is
+reopened. Same-process hot updates keep that session's explicit choice without
+reapplying a setting. Selecting an Aura effect, color or device edits
+a local draft; “应用同步” is the separate send action. Disabled Apply, take and
+return buttons now show the actual permission/session/selection reason in a
+tooltip. Source-prepared routes without a physical write validation display
+“待验证”. Animation preflight and zero completed frames display waiting rather
+than successful synchronization. Its first tick remains inside the tracked task;
+a failed first frame never enters the continuous loop, and a completed first
+tick advances nextDue so that the loop does not repeat it. Direct motherboard
+output has no proven color readback and is shown as unconfirmed. These changes
+correct UI state; they do not establish that real lighting writes work.
+
+Notebook control captures and live capabilities are not transferred to a
+replacement. Six prepared manual SCI paths still require a fresh capture;
+there is no automatic mobile setting application. Windows brightness also uses
+a tracked isolated worker. Its unknown-completion write quarantine lives in the
+stable AppDomain and survives preview replacement; a new manual read does not
+clear it. A presentation-only timer retires expired brightness values without
+performing WMI or automatically applying a value. FanNative remains read-only,
+and access or ABI failures never grant fan control or reuse partial data as a
+complete current snapshot.
+
+The exact PID7489 headset now has a separate four-GET lighting scope. A user
+static request may explicitly enable LEDs, verify the old recipe/owner, then
+submit Static1 and verify the full result. An old raw mode0 remains unnamed;
+Aura is never silently disabled. Partial output stops without retry or restore.
+Software-animation later phases keep this scope's static transaction, rather
+than filtering it into an empty color-only plan. Every target must have a
+nonempty session-bound plan before any group output; an empty plan cannot
+increment the completed-frame count. These checks are synthetic, and headset
+lighting writes have not been validated on the physical device.
 
 Manual calibration is never resumed after replacement. The reload gate waits for its full transaction and restoration; closing cancels it and awaits cleanup before disposing the worker. USB/HID notification refresh also owns a tracked task. Device-change generations invalidate stale bindings and prevent late GET/SET responses from re-establishing them. Explicit per-request budgets include queue time, and a queue expiry transmits no frame. No timed-out request is abandoned behind a completed refresh task.
